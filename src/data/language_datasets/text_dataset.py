@@ -9,7 +9,11 @@ from typing import List
 import pickle
 import numpy as np
 
+
+
+logging.basicConfig()
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class DataProcessor(object):
@@ -27,11 +31,8 @@ class DataProcessor(object):
     def get_test_examples(self, data_dir):
         raise NotImplementedError()
 
-    def set_mode(self, mode):
-        """Sets the mode of a task if required"""
-        self.task_mode = mode
-
-    def to_example(self, example_id, text_a=None, text_b=None, text_c=None, label=None, desc=None):
+    @classmethod
+    def _to_example(self, example_id, text_a=None, text_b=None, text_c=None, label=None, desc=None):
         return {
             "example_id": example_id,
             "text_a": text_a,
@@ -83,7 +84,7 @@ class HellaSwagProcessor(DataProcessor):
         examples = []
         for idx, dt in enumerate(data):
             examples.append(
-                self.to_example(
+                self._to_example(
                     example_id=idx,
                     text_a=[dt["ctx"]]*4,
                     text_b=dt["endings"],
@@ -117,7 +118,7 @@ class PIQAProcessor(DataProcessor):
             labels = np.zeros(len(data)) #dummy, not used
 
         examples = [
-            self.to_example(
+            self._to_example(
                 example_id=idx,
                 text_a=[dt["goal"]]*2,
                 text_b=[dt["sol1"], dt["sol2"]],
@@ -145,7 +146,7 @@ class COSMOSQAProcessor(DataProcessor):
 
     def _create_examples(self, data, has_label=True):
         examples = [
-            self.to_example(
+            self._to_example(
                 example_id=line[0],
                 text_a=[line[1]]*4,
                 text_b=[line[2]]*4,
