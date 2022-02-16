@@ -13,7 +13,7 @@ import pickle as pkl
 import numpy as np
 import torch
 import torch.nn.functional as F
-
+from torchvision import transforms as T
 from torch.utils.data import Dataset
 
 from PIL import Image
@@ -21,7 +21,7 @@ from utils.image_utils import resize_image
 
 class MSCOCOImagesDataset(Dataset):
 
-    def __init__(self, coco_dir, image_size=(384,640)):
+    def __init__(self, coco_dir, image_size=(224,224)):
 
         self.images_dir = os.path.join(coco_dir, 'images')          # Images across all 2017 splits stored in same directory
         self.image_size = image_size
@@ -32,6 +32,12 @@ class MSCOCOImagesDataset(Dataset):
             image_id = int(fn.strip('.jpg'))
             self.imageid2filename[image_id] = os.path.join(self.images_dir, fn)
         self.imageids = list(self.imageid2filename.keys())
+
+        self.transform = T.Compose([
+            T.Resize(image_size),
+            T.ToTensor(),                                 # [0, 1]
+            T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # [-1, 1]
+        ])
 
     def get_image_data(self, image_id, feats_type):
 
@@ -46,8 +52,11 @@ class MSCOCOImagesDataset(Dataset):
         assert image_id in self.imageids
         image_fn = self.imageid2filename[image_id]
         image = Image.open(image_fn)
-        image_arr = resize_image(image, self.image_size)
-        image_tensor = torch.tensor(image_arr).permute(2, 0, 1).float()
+
+        #image_arr = resize_image(image, self.image_size)
+        #image_tensor = torch.tensor(image_arr).permute(2, 0, 1).float()
+        image_tensor = self.transform(image)
+
         #if torch.max(image_tensor) == 58.0 or torch.count_nonzero(image_tensor) == 0:
         #    raise Exception("Found an invalid image")
         image.close()
