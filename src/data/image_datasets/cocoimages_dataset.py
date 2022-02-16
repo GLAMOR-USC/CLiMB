@@ -13,6 +13,7 @@ import pickle as pkl
 import numpy as np
 import torch
 import torch.nn.functional as F
+
 from torch.utils.data import Dataset
 
 from PIL import Image
@@ -20,10 +21,9 @@ from utils.image_utils import resize_image
 
 class MSCOCOImagesDataset(Dataset):
 
-    def __init__(self, coco_dir, split, image_size=(384,640)):
+    def __init__(self, coco_dir, image_size=(384,640)):
 
-        self.images_dir = os.path.join(coco_dir, 'images', '{}2017'.format(split))        # split = {train, val, test}. Using only 2017 image splits.
-        self.split = split
+        self.images_dir = os.path.join(coco_dir, 'images')          # Images across all 2017 splits stored in same directory
         self.image_size = image_size
 
         image_filenames = os.listdir(self.images_dir)
@@ -55,7 +55,7 @@ class MSCOCOImagesDataset(Dataset):
 
 if __name__ == '__main__':
 
-    dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/', 'val')
+    dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/')
     imgid = dataset.imageids[0]
     x = dataset.get_image_data(imgid, 'patch')
     print(x.shape)
