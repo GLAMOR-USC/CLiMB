@@ -60,7 +60,7 @@ class MSCOCOImagesDataset(Dataset):
         #if torch.max(image_tensor) == 58.0 or torch.count_nonzero(image_tensor) == 0:
         #    raise Exception("Found an invalid image")
         image.close()
-        return image_tensor
+        return image_tensor         # (B, 3, W, H)
 
 if __name__ == '__main__':
 
