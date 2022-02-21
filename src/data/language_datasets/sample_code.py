@@ -14,11 +14,16 @@ from text_dataset import *
 if __name__ == '__main__':
     tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
 
-    dataloader = get_data_loader(tokenizer, task_name='sst2', split='test', max_len=100, batch_size=128) 
-    dataloader = get_data_loader(tokenizer, task_name='imdb', split='dev', max_len=100, batch_size=128) 
-    dataloader = get_data_loader(tokenizer, task_name='hellaswag', split='test', max_len=100, batch_size=128, data_dir='hellaswag') 
-    dataloader = get_data_loader(tokenizer, task_name='piqa', split='train', max_len=100, batch_size=128, data_dir='piqa') 
-    dataloader = get_data_loader(tokenizer, task_name='cosmosqa', split='test', max_len=150, batch_size=128, data_dir='cosmosqa') 
+    cache_dir = "/data/datasets/MCL/cached_datasets"
+    dataloader = get_data_loader(tokenizer, task_name='sst2', split='train', max_len=100, batch_size=128, cache_dir=cache_dir) 
+    dataloader = get_data_loader(tokenizer, task_name='imdb', split='dev', max_len=100, batch_size=128, cache_dir=cache_dir) 
+
+    dataloader = get_data_loader(tokenizer, task_name='hellaswag', split='test', max_len=100, batch_size=128, 
+        cache_dir=cache_dir, data_dir='/data/datasets/MCL/hellaswag') 
+    dataloader = get_data_loader(tokenizer, task_name='piqa', split='train', max_len=100, batch_size=128, 
+        cache_dir=cache_dir, data_dir='/data/datasets/MCL/piqa') 
+    dataloader = get_data_loader(tokenizer, task_name='cosmosqa', split='test', max_len=150, batch_size=128, 
+        cache_dir=cache_dir, data_dir='/data/datasets/MCL/cosmosqa') 
 
     for (input_ids, attn_masks, token_type_ids, labels) in dataloader:
         if len(input_ids.shape)>2:

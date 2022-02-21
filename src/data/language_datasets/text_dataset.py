@@ -73,13 +73,13 @@ def convert_data_to_features(
     return features
 
 
-def get_data_loader(tokenizer, task_name, split, max_len, batch_size, data_dir=None):
+def get_data_loader(tokenizer, task_name, split, max_len, batch_size, cache_dir, data_dir=None):
     task_name = task_name.lower()
     processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'cosmosqa': COSMOSQAProcessor, 
         'imdb': IMDBProcessor, 'sst2': GLUEProcessor} 
 
     # load if cached
-    path = f'TensorDataset_{task_name}_{split}_{max_len}.pt'
+    path = os.path.join(cache_dir, f'TensorDataset_{task_name}_{split}_{max_len}.pt')
     if os.path.exists(path):
         dataset = torch.load(path)
         logger.info(f"Loaded the cached file from {path}!")
