@@ -2,13 +2,12 @@ from tqdm import tqdm
 import pdb
 import logging
 import os
-import pickle
 import numpy as np
 from transformers import PreTrainedTokenizer
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
 
-from text_processors import *
+from data.language_datasets.text_processors import *
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

@@ -129,4 +129,4 @@ dmypy.json
 .pyre/
 
 # cached data
-src/data/language_datasets/cache*
+src/cache*

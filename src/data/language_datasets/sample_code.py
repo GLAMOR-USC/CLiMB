@@ -7,8 +7,8 @@ import pickle
 import numpy as np
 from transformers import BertTokenizer
 
-from text_processors import *
-from text_dataset import *
+from data.language_datasets.text_processors import *
+from data.language_datasets.text_dataset import *
 
 
 if __name__ == '__main__':
