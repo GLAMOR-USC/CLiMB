@@ -41,8 +41,8 @@ class MSCOCOImagesDataset(Dataset):
 
     def get_image_data(self, image_id, feats_type):
 
-        assert feats_type in ['raw', 'fast-rcnn']
-        if feats_type == 'raw':
+        assert feats_type in ['patch', 'fast-rcnn']
+        if feats_type == 'patch':
             return self.get_raw_image_tensor(image_id)
         elif feats_type == 'fast-rcnn':
             raise NotImplementedError("Have not implemented Fast-RCNN feature inputs for MS-COCO images!")
@@ -60,11 +60,11 @@ class MSCOCOImagesDataset(Dataset):
         #if torch.max(image_tensor) == 58.0 or torch.count_nonzero(image_tensor) == 0:
         #    raise Exception("Found an invalid image")
         image.close()
-        return image_tensor         # (B, 3, W, H)
+        return image_tensor
 
 if __name__ == '__main__':
 
     dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/')
     imgid = dataset.imageids[0]
-    x = dataset.get_image_data(imgid, 'raw')
+    x = dataset.get_image_data(imgid, 'patch')
     print(x.shape)
