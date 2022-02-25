@@ -66,6 +66,8 @@ class VQADataset(Dataset):
             qdata = qid2qdata[qid]
             assert qdata['image_id'] == image_id
             question = qdata['question']
+            tokens = self.tokenizer.tokenize(question)
+            input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
 
             # Map from each crowdsourced answer to occurrences in annotation
             answers = [a['answer'] for a in anno['answers']]
@@ -89,6 +91,7 @@ class VQADataset(Dataset):
             example = {'question_id': qid,
                         'image_id': image_id,
                         'question': question,
+                        'question_input_ids': input_ids,
                         'correct_answer': correct_answer,
                         'labels': labels,
                         'answers': answers,
@@ -106,12 +109,7 @@ class VQADataset(Dataset):
         question_id = example['question_id']
 
         # Tokenizer the input question 
-        # I recommend moving tokenization to the __init__ to save time, as tokenization could slow down the gpu util if the seq_len is long
-        # something like input_ids = example['ques_tok_ids'] # and you can cache tokenized questions and load them in __init__ to avoid the process in every run
-        # ignore this if avg q_len is short though
-        question = example['question']
-        tokens = self.tokenizer.tokenize(question)
-        input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+        input_ids = example['question_input_ids']
 
         # Get the image tensor from ImageDataset
         image_id = example['image_id']
@@ -124,8 +122,8 @@ class VQADataset(Dataset):
 
 def batch_collate(batch, tokenizer, args, num_labels):
 
-    pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
-#    pad_token = tokenizer.pad_token_id
+    #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
+    pad_token = tokenizer.pad_token_id
 
     # Pad the text inputs
     # Do we need to set a global MAX_LEN to clip the super long questions? (this really depends on the dataset)
@@ -201,7 +199,7 @@ if __name__ == '__main__':
 
     images_dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/')
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    vqa_dataloader = build_vqa_dataloader(args, data_dir, images_dataset, 'train', tokenizer)
+    vqa_dataloader = build_vqa_dataloader(args, data_dir, images_dataset, 'val', tokenizer)
 
     for batch in vqa_dataloader:
         pdb.set_trace() 

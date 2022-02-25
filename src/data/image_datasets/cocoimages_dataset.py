@@ -31,7 +31,7 @@ class MSCOCOImagesDataset(Dataset):
         for fn in image_filenames:
             image_id = int(fn.strip('.jpg'))
             self.imageid2filename[image_id] = os.path.join(self.images_dir, fn)
-        self.imageids = list(self.imageid2filename.keys())
+        self.imageids = set(list(self.imageid2filename.keys()))
 
         self.transform = T.Compose([
             T.Resize(image_size),
@@ -49,10 +49,8 @@ class MSCOCOImagesDataset(Dataset):
 
     def get_raw_image_tensor(self, image_id):
 
-        assert image_id in self.imageids
+        assert image_id in self.imageid2filename.keys()
         image_fn = self.imageid2filename[image_id]
-        # I recommend making self.imageids as a set instead of a list in __init__ to save searching time here
-        # or we can ommit it and simply "assert os.path.exists(image_fn)"
         image = Image.open(image_fn)
 
         #image_arr = resize_image(image, self.image_size)

@@ -36,7 +36,7 @@ def create_vqa_labels(vqa_dir):
 
     pkl.dump(ans2label, open(os.path.join(vqa_dir, 'ans2label.pkl'), 'wb'))
 
-
+'''
 def target_tensor(len, labels, scores):
     """ create the target by labels and scores """
     target = [0]*len
@@ -51,7 +51,6 @@ def target_tensor(num_labels, labels, scores):
     target[labels] = torch.tensor(scores)
 
     return target
-'''
 
 if __name__ == '__main__':
     create_vqa_labels('/data/datasets/MCL/vqav2/')
