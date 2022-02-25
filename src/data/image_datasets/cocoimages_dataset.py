@@ -33,19 +33,32 @@ class MSCOCOImagesDataset(Dataset):
             self.imageid2filename[image_id] = os.path.join(self.images_dir, fn)
         self.imageids = set(list(self.imageid2filename.keys()))
 
-        self.transform = T.Compose([
+        self.raw_transform = T.Compose([
             T.Resize(image_size),
             T.ToTensor(),                                 # [0, 1]
             T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # [-1, 1]
         ])
 
+        self.pil_transform = T.Resize(image_size)
+
     def get_image_data(self, image_id, feats_type):
 
-        assert feats_type in ['raw', 'fast-rcnn']
+        assert feats_type in ['pil-image', 'raw', 'fast-rcnn']
+
+        if feats_type == 'pil-image':
+            return self.get_pil_image(image_id)
         if feats_type == 'raw':
             return self.get_raw_image_tensor(image_id)
         elif feats_type == 'fast-rcnn':
             raise NotImplementedError("Have not implemented Fast-RCNN feature inputs for MS-COCO images!")
+
+    def get_pil_image(self, image_id):
+
+        assert image_id in self.imageid2filename.keys()
+        image_fn = self.imageid2filename[image_id]
+        image = Image.open(image_fn)
+        image = self.pil_transform(image)
+        return image
 
     def get_raw_image_tensor(self, image_id):
 
@@ -55,7 +68,7 @@ class MSCOCOImagesDataset(Dataset):
 
         #image_arr = resize_image(image, self.image_size)
         #image_tensor = torch.tensor(image_arr).permute(2, 0, 1).float()
-        image_tensor = self.transform(image)
+        image_tensor = self.raw_transform(image)
 
         #if torch.max(image_tensor) == 58.0 or torch.count_nonzero(image_tensor) == 0:
         #    raise Exception("Found an invalid image")
