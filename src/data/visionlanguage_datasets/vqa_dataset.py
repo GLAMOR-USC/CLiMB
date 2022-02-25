@@ -43,7 +43,7 @@ class VQADataset(Dataset):
 
         self.annotations_file = os.path.join(data_dir, 'v2_mscoco_{}2014_annotations.json'.format(split))
         self.questions_file = os.path.join(data_dir, 'v2_OpenEnded_mscoco_{}2014_questions.json'.format(split))
-        self.ans2label_file = os.path.join(data_dir, 'ans2label.pkl'.format(split))
+        self.ans2label_file = os.path.join(data_dir, 'ans2label.pkl'.format(split)) # Where does this file come from?
 
         # Load mapping from answers to labels
         self.ans2label = pkl.load(open(self.ans2label_file, 'rb'))
@@ -105,7 +105,10 @@ class VQADataset(Dataset):
         example = self.data[index]
         question_id = example['question_id']
 
-        # Tokenizer the input question
+        # Tokenizer the input question 
+        # I recommend moving tokenization to the __init__ to save time, as tokenization could slow down the gpu util if the seq_len is long
+        # something like input_ids = example['ques_tok_ids'] # and you can cache tokenized questions and load them in __init__ to avoid the process in every run
+        # ignore this if avg q_len is short though
         question = example['question']
         tokens = self.tokenizer.tokenize(question)
         input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
@@ -122,8 +125,10 @@ class VQADataset(Dataset):
 def batch_collate(batch, tokenizer, args, num_labels):
 
     pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
+#    pad_token = tokenizer.pad_token_id
 
     # Pad the text inputs
+    # Do we need to set a global MAX_LEN to clip the super long questions? (this really depends on the dataset)
     input_ids = [x[0] for x in batch]
     max_len = max([len(x) for x in input_ids])
     input_ids_padded = []

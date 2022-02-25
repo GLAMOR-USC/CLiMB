@@ -51,6 +51,8 @@ class MSCOCOImagesDataset(Dataset):
 
         assert image_id in self.imageids
         image_fn = self.imageid2filename[image_id]
+        # I recommend making self.imageids as a set instead of a list in __init__ to save searching time here
+        # or we can ommit it and simply "assert os.path.exists(image_fn)"
         image = Image.open(image_fn)
 
         #image_arr = resize_image(image, self.image_size)

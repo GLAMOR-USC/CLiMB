@@ -44,6 +44,14 @@ def target_tensor(len, labels, scores):
         target[l] = scores[id]
 
     return torch.tensor(target)
+''' # this seems more straightforward to me
+def target_tensor(num_labels, labels, scores):
+    """ create the target by labels and scores """
+    target = torch.zeros(num_labels)
+    target[labels] = torch.tensor(scores)
+
+    return target
+'''
 
 if __name__ == '__main__':
-    create_vqa_labels('/data/datasets/MCL/vqav2/') 
+    create_vqa_labels('/data/datasets/MCL/vqav2/')
