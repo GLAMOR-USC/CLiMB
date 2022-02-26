@@ -3,20 +3,21 @@ import pdb
 import logging
 import os
 import numpy as np
-from transformers import PreTrainedTokenizer
 import torch
+import transformers
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
 
 from data.language_datasets.text_processors import *
+
+transformers.logging.set_verbosity_error()
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
 def convert_mc_data_to_features(
     dataset,
-    tokenizer: PreTrainedTokenizer,
+    tokenizer,
     task_name,
     max_len_clip,
 ):
@@ -24,14 +25,13 @@ def convert_mc_data_to_features(
     features, all_lengths = [], []
     for (ex_index, example) in tqdm(enumerate(dataset), desc="convert examples to features"):
         choice_feats = []
-        if task_name == 'cosmosqa': #TODO: clip the length of example['text_a']
-            text_a = example['text_a'] + tokenizer.sep_token + example['text_c']
-        else:
-            text_a = example['text_a']
-
         for j, choice in enumerate(example['text_b']):
-            inp = tokenizer.encode_plus(text_a, choice, add_special_tokens=True, 
-                max_length=max_len_clip, pad_to_max_length=True)
+            if task_name == 'cosmosqa':
+                text_b = example['text_c'] + tokenizer.sep_token + choice
+            else:
+                text_b = choice
+            inp = tokenizer.encode_plus(example['text_a'], text_b, add_special_tokens=True, 
+                max_length=max_len_clip, padding='max_length', truncation='longest_first')
             inp['label'] = example['label']
             choice_feats.append(inp)
 
@@ -47,7 +47,7 @@ def convert_mc_data_to_features(
 
 def convert_data_to_features(
     dataset,
-    tokenizer: PreTrainedTokenizer,
+    tokenizer,
     task_name,
     max_len_clip,
 ):
@@ -56,10 +56,12 @@ def convert_data_to_features(
     for (ex_index, example) in tqdm(enumerate(dataset), desc="convert examples to features"):
         if task_name == 'sst2': 
             text_a = example['sentence']
+            text_b = None
         elif task_name == 'imdb': 
             text_a = example['text']
-        inp = tokenizer.encode_plus(text_a, add_special_tokens=True, 
-            max_length=max_len_clip, pad_to_max_length=True)
+            text_b = None
+        inp = tokenizer.encode_plus(text_a, text_b, add_special_tokens=True, 
+                max_length=max_len_clip, padding='max_length', truncation='longest_first')
 
         inp['label'] = example['label']
         features.append(inp)

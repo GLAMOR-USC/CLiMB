@@ -1,6 +1,6 @@
 torch
 torchvision
-transformers==4.3.2
+transformers==4.16.2
 tensorboardX
 tqdm
 numpy

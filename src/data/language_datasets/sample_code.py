@@ -16,16 +16,21 @@ if __name__ == '__main__':
 
     cache_dir = "/data/datasets/MCL/cached_datasets"
     dataloader = get_data_loader(tokenizer, task_name='sst2', split='train', max_len=100, batch_size=128, cache_dir=cache_dir) 
-    dataloader = get_data_loader(tokenizer, task_name='imdb', split='dev', max_len=100, batch_size=128, cache_dir=cache_dir) 
-
+    logger.info(str(len(dataloader.dataset)))
+    dataloader = get_data_loader(tokenizer, task_name='imdb', split='train', max_len=100, batch_size=128, cache_dir=cache_dir) 
+    logger.info(str(len(dataloader.dataset)))
     dataloader = get_data_loader(tokenizer, task_name='hellaswag', split='test', max_len=100, batch_size=128, 
         cache_dir=cache_dir, data_dir='/data/datasets/MCL/hellaswag') 
+    logger.info(str(len(dataloader.dataset)))
     dataloader = get_data_loader(tokenizer, task_name='piqa', split='train', max_len=100, batch_size=128, 
         cache_dir=cache_dir, data_dir='/data/datasets/MCL/piqa') 
+    logger.info(str(len(dataloader.dataset)))
     dataloader = get_data_loader(tokenizer, task_name='cosmosqa', split='test', max_len=150, batch_size=128, 
         cache_dir=cache_dir, data_dir='/data/datasets/MCL/cosmosqa') 
+    logger.info(str(len(dataloader.dataset)))
 
-    for (input_ids, attn_masks, token_type_ids, labels) in dataloader:
+    for batch in dataloader:
+        input_ids, attn_masks, token_type_ids, labels = batch
         if len(input_ids.shape)>2:
             print(tokenizer.batch_decode(input_ids[0]), input_ids.shape)
         else:
