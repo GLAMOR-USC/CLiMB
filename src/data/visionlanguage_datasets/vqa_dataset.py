@@ -110,6 +110,7 @@ class VQADataset(Dataset):
         question_id = example['question_id']
 
         # Tokenizer the input question 
+        question = example['question']
         input_ids = example['question_input_ids']
 
         # Get the image tensor from ImageDataset
@@ -119,7 +120,7 @@ class VQADataset(Dataset):
         labels = example['labels']
         scores = example['scores']
 
-        return input_ids, image, labels, scores, question_id
+        return question, input_ids, image, labels, scores, question_id
 
 def batch_collate(batch, tokenizer, args, num_labels):
 
@@ -128,7 +129,8 @@ def batch_collate(batch, tokenizer, args, num_labels):
 
     # Pad the text inputs
     # Do we need to set a global MAX_LEN to clip the super long questions? (this really depends on the dataset)
-    input_ids = [x[0] for x in batch]
+    questions = [x[0] for x in batch]
+    input_ids = [x[1] for x in batch]
     max_len = max([len(x) for x in input_ids])
     input_ids_padded = []
     attn_masks = []
@@ -145,14 +147,14 @@ def batch_collate(batch, tokenizer, args, num_labels):
     batch_scores = []
     batch_labels = []
     for x in batch:
-        labels, scores = x[2], x[3]
+        labels, scores = x[3], x[4]
         target_scores = target_tensor(num_labels, labels, scores)
         batch_scores.append(target_scores)
         batch_labels.append(labels)
     batch_scores = torch.stack(batch_scores, dim=0)
 
     # Stack the image tensors, doing padding if necessary for the sequence of region features
-    image_tensors = [x[1] for x in batch]
+    image_tensors = [x[2] for x in batch]
     if args.visual_mode == 'pil-image':
         images = image_tensors                                          # Not actually tensors for this option, list of PIL.Image objects
     if args.visual_mode == 'raw':
@@ -167,7 +169,8 @@ def batch_collate(batch, tokenizer, args, num_labels):
             image_tensors_padded.append(padded_tensor)
         images = torch.stack(image_tensors_padded, dim=0)        # Pads region features with 0 vectors to give (B, R, hv) tensor
 
-    return {'input_ids': input_ids,
+    return {'questions': questions,
+            'input_ids': input_ids,
             'attn_mask': attn_mask,
             'images': images,
             'target_scores': batch_scores,
