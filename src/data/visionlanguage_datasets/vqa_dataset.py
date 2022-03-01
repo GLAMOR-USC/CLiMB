@@ -51,53 +51,62 @@ class VQADataset(Dataset):
         self.label2ans = {v: k for k, v in self.ans2label.items()}
         self.num_labels = len(self.label2ans)
 
-        # Create map from question id to question
-        questions = json.load(open(self.questions_file))['questions']
-        qid2qdata = {x['question_id']: x for x in questions}
 
-        # Create data for each annotation
-        annotations = json.load(open(self.annotations_file))['annotations']
-        self.data = []
-        for anno in annotations:
-            qid = anno['question_id']
-            correct_answer = anno['multiple_choice_answer']
-            image_id = anno['image_id']
+        self.cached_data_file = os.path.join(data_dir, 'cached_vqa_data', 'vqa_{}.pkl'.format(split))
+        if os.path.isfile(self.cached_data_file):
+            # Load cached data
+            self.data = pkl.load(open(self.cached_data_file, 'rb'))
 
-            # Retrieve the question for this annotation
-            qdata = qid2qdata[qid]
-            assert qdata['image_id'] == image_id
-            question = qdata['question']
-            tokens = self.tokenizer.tokenize(question)
-            input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+        else:
+            # Create map from question id to question
+            questions = json.load(open(self.questions_file))['questions']
+            qid2qdata = {x['question_id']: x for x in questions}
 
-            # Map from each crowdsourced answer to occurrences in annotation
-            answers = [a['answer'] for a in anno['answers']]
-            answer_count = defaultdict(int)
-            for ans in answers:
-                answer_count[ans] += 1
+            # Create data for each annotation
+            annotations = json.load(open(self.annotations_file))['annotations']
+            self.data = []
+            for anno in annotations:
+                qid = anno['question_id']
+                correct_answer = anno['multiple_choice_answer']
+                image_id = anno['image_id']
 
-            # Get label and score (0.3/0.6/1) corresponding to each crowdsourced answer
-            labels = []
-            scores = []
-            answers = []
-            for answer in answer_count:
-                if answer not in self.ans2label:
-                    continue
-                labels.append(self.ans2label[answer])
-                score = get_score(answer_count[answer])
-                scores.append(score)
-                answers.append(answer)
+                # Retrieve the question for this annotation
+                qdata = qid2qdata[qid]
+                assert qdata['image_id'] == image_id
+                question = qdata['question']
+                tokens = self.tokenizer.tokenize(question)
+                input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
 
-            # Store pre-processed example
-            example = {'question_id': qid,
-                        'image_id': image_id,
-                        'question': question,
-                        'question_input_ids': input_ids,
-                        'correct_answer': correct_answer,
-                        'labels': labels,
-                        'answers': answers,
-                        'scores': scores}
-            self.data.append(example)
+                # Map from each crowdsourced answer to occurrences in annotation
+                answers = [a['answer'] for a in anno['answers']]
+                answer_count = defaultdict(int)
+                for ans in answers:
+                    answer_count[ans] += 1
+
+                # Get label and score (0.3/0.6/1) corresponding to each crowdsourced answer
+                labels = []
+                scores = []
+                answers = []
+                for answer in answer_count:
+                    if answer not in self.ans2label:
+                        continue
+                    labels.append(self.ans2label[answer])
+                    score = get_score(answer_count[answer])
+                    scores.append(score)
+                    answers.append(answer)
+
+                # Store pre-processed example
+                example = {'question_id': qid,
+                            'image_id': image_id,
+                            'question': question,
+                            'question_input_ids': input_ids,
+                            'correct_answer': correct_answer,
+                            'labels': labels,
+                            'answers': answers,
+                            'scores': scores}
+                self.data.append(example)
+
+            pkl.dump(self.data, open(self.cached_data_file, 'wb'))
 
         logger.info("Loaded VQAv2 {} dataset, with {} examples".format(self.split, len(self.data)))
 
@@ -122,7 +131,7 @@ class VQADataset(Dataset):
 
         return question, input_ids, image, labels, scores, question_id
 
-def batch_collate(batch, tokenizer, args, num_labels):
+def batch_collate(batch, tokenizer, visual_mode, num_labels):
 
     #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
     pad_token = tokenizer.pad_token_id
@@ -155,11 +164,11 @@ def batch_collate(batch, tokenizer, args, num_labels):
 
     # Stack the image tensors, doing padding if necessary for the sequence of region features
     image_tensors = [x[2] for x in batch]
-    if args.visual_mode == 'pil-image':
+    if visual_mode == 'pil-image':
         images = image_tensors                                          # Not actually tensors for this option, list of PIL.Image objects
-    if args.visual_mode == 'raw':
+    if visual_mode == 'raw':
         images = torch.stack(image_tensors, dim=0)               # Stacks individual raw image tensors to give (B, 3, W, H) tensor
-    elif args.visual_mode == 'fast-rcnn':
+    elif visual_mode == 'fast-rcnn':
         max_len = max([t.shape[0] for t in image_tensors])
         image_tensors_padded = []
         for i in range(len(image_tensors)):
@@ -189,7 +198,7 @@ def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visua
         dataset,
         num_workers=args.num_workers,
         batch_size=batch_size,
-        collate_fn=lambda x: batch_collate(x, tokenizer, args, num_labels))
+        collate_fn=lambda x: batch_collate(x, tokenizer, visual_mode, num_labels))
     return dataloader
 
 if __name__ == '__main__':
