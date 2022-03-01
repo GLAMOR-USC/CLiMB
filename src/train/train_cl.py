@@ -20,35 +20,46 @@ from tqdm import tqdm
 import wandb
 
 from transformers import BertTokenizer
-from transformers import AdamW, get_linear_schedule_with_warmup
-from transformers import ViltProcessor, ViltModel
 
-from modeling.vilt_modeling import ViltEncoder, ViltForSequenceClassification
-from train.train_vqa import train_vqa
+from modeling import load_encoder_map
+
 from configs.model_configs import model_configs
+from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 
 logger = logging.getLogger(__name__)
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device(
+#        "cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
-config_file = '../configs/task_configs.yaml'
-task_configs = yaml.load(open(config_file, 'r'))
-
-task_name = 'vqa'
-encoder_name = 'vilt'
-pretrained_vilt_name = 'dandelin/vilt-b32-mlm'
-
-model_config = model_configs[encoder_name]
-# Need to write a method in modeling/ that loads the pretrained model depending on the model type (encoder_name)
-vilt_processor = ViltProcessor.from_pretrained(pretrained_vilt_name)
-vilt = ViltModel.from_pretrained(pretrained_vilt_name)
-
-vilt_encoder = ViltEncoder(vilt_processor, vilt, device)
+class Args:
+    def __init__(self):
+        self.batch_size = 4
+        self.shuffle = True
+        self.num_workers = 2
+        self.visual_mode = 'pil-image'
+        self.encoder_name = 'vilt'
+        self.pretrained_model_name = 'dandelin/vilt-b32-mlm'
+        self.ordered_cl_tasks = ['vqa']
+args = Args()
 
 
-task_config = task_configs['vqa']
+# Load the correct Encoder model, based on encoder_name argument
+model_config = model_configs[args.encoder_name]
+load_encoder_method = load_encoder_map[args.encoder_name]
+encoder = load_encoder_method(args.pretrained_model_name, device)
 
+# Ensure all the tasks for continual learning are supported VL tasks
+for task_name in args.ordered_cl_tasks:
+    assert task_name in SUPPORTED_VL_TASKS
 
-train_vqa(args, vilt_encoder, task_config, model_config, tokenizer, device)
+for task_num, task_name in enumerate(args.ordered_cl_tasks):
+    # Load the correct training method for current CL task, and call the training method
+
+    logger.info("----------------------------------------------------")
+    logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num, task_name))
+    train_method = task_configs[task_name]['train_method']
+    best_eval_score, best_model = train_method(args, encoder, task_configs, model_config, tokenizer, device)
+
+    # Save best model checkpoint, and separately save the models' Encoder object
