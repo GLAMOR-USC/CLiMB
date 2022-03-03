@@ -35,10 +35,9 @@ device = torch.device(
 
 class Args:
     def __init__(self):
-        self.batch_size = 16
+        self.batch_size = 32
         self.shuffle = True
         self.num_workers = 2
-        self.visual_mode = 'pil-image'
         self.encoder_name = 'vilt'
         self.pretrained_model_name = 'dandelin/vilt-b32-mlm'
         self.ordered_cl_tasks = ['vqa']
