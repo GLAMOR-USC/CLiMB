@@ -5,14 +5,16 @@ import torchvision
 from PIL import Image
 from pycocotools.coco import COCO
 import numpy as np
+## image_dataset -- tejas
+from data.image_datasets import cocoimages_dataset
 
 
-class cocoSegmentation(torch.utils.data.Dataset):
-    def __init__(self, root, annotation, image_datasets, transforms=None):
-        super(cocoSegmentation, self).__init__()
+class MSCOCOSegmentation(torch.utils.data.Dataset):
+    def __init__(self, root, annotation, image_datasets):
+        super(MSCOCOSegmentation, self).__init__()
         self.root = root
-        self.transforms = transforms
         self.image_datasets = image_datasets
+        self.transforms = self.image_datasets.transform
         self.coco = COCO(annotation)
         self.ids = list(sorted(self.coco.imgs.keys()))
 
@@ -28,7 +30,11 @@ class cocoSegmentation(torch.utils.data.Dataset):
         coco = self.coco
         # Image ID
         img_id = self.ids[index]
-        ##img   = self.image_dataset.get_image_data(img_id, 'patch') 
+        #print(img_id)
+        # open the input image
+        #img = Image.open(os.path.join(self.root, path))
+        img   = self.image_datasets.get_image_data(img_id, 'patch') 
+        #print(img.shape)
         # List: get annotation id from coco
         ann_ids = coco.getAnnIds(imgIds=img_id)
         # Dictionary: target coco_annotation file for an image
@@ -44,12 +50,9 @@ class cocoSegmentation(torch.utils.data.Dataset):
         cats = self.coco.loadCats(cat_ids)
         cat_names = [cat["name"] for cat in cats]
 
-
         # path for input image
         path = coco.loadImgs(img_id)[0]['file_name']
-        # open the input image
-        img = Image.open(os.path.join(self.root, path))
-
+        
         # number of objects in the image
         num_objs = len(coco_annotation)
 
@@ -85,26 +88,43 @@ class cocoSegmentation(torch.utils.data.Dataset):
         my_annotation["iscrowd"] = iscrowd
         
         ###This add the binary mask to annotations 
-        bmask = torch.zeros((img_info['height'],img_info['width']))
+        bmask = np.zeros((img_info['height'],img_info['width']))
         for i in range(len(anns)):
             bmask = np.maximum(self.coco.annToMask(anns[i]), bmask)
-        my_annotation["bmask"] = bmask
+        #print('bmask.shape: ', bmask.shape)
+        #From numpy to PIL Image to tensor(transform)
+        my_annotation["bmask"] = self.transforms(Image.fromarray(np.uint32(bmask), 'RGB'))
 
         ###This add the multiclass mask
-        mask = torch.zeros((img_info['height'], img_info['width']))
+        mask = np.zeros((img_info['height'], img_info['width']))
         for i in range(len(anns)):
             #print(anns[i]['category_id'], len(cats))
             className = self.getClassName(anns[i]['category_id'], cats)
             pixel_value = cat_names.index(className)+1
             mask = np.maximum(self.coco.annToMask(anns[i])*pixel_value, mask)
-        my_annotation["mask"] = mask
-
-        ##Tejas function
-        if self.transforms is not None:
-            img = self.transforms(img)
-        ##img   = self.image_dataset.get_image_data(img_id, 'patch')
-        
+        #print('mask.shape: ', mask.shape)
+        #From numpy to PIL Image to tensor(transform)
+        my_annotation["mask"] = self.transforms(Image.fromarray(np.uint32(mask), 'RGB'))
         return img, my_annotation
 
     def __len__(self):
         return len(self.ids)
+
+if __name__ == '__main__':
+
+    tejas = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/')
+    print(tejas.get_image_data( 9, 'patch').shape)
+
+    images_dir          = '/data/datasets/MCL/ms-coco/'
+    annotations         = '/data/datasets/MCL/ms-coco/detections/annotations/instances_train2017.json'
+    trainset            = MSCOCOSegmentation(root=images_dir+ 'images/',
+                                            annotation=annotations,
+                                            image_datasets = MSCOCOImagesDataset(images_dir),
+                                            #transforms=get_transform()
+                        )
+
+    img, annotations = trainset[0]
+    print(img.shape)
+    print(annotations['bmask'].shape)
+    print(annotations['mask'].shape)
+
