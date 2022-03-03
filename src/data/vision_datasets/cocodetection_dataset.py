@@ -31,8 +31,7 @@ class MSCOCOSegmentation(torch.utils.data.Dataset):
         # Image ID
         img_id = self.ids[index]
         #print(img_id)
-        # open the input image
-        #img = Image.open(os.path.join(self.root, path))
+        #img = Image.open(os.path.join(self.root, path))    # open the input image
         img   = self.image_datasets.get_image_data(img_id, 'patch') 
         #print(img.shape)
         # List: get annotation id from coco
