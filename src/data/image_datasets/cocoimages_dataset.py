@@ -57,6 +57,7 @@ class MSCOCOImagesDataset(Dataset):
         assert image_id in self.imageid2filename.keys()
         image_fn = self.imageid2filename[image_id]
         image = Image.open(image_fn)
+        image = image.convert('RGB')
         image = self.pil_transform(image)
         return image
 
@@ -65,6 +66,7 @@ class MSCOCOImagesDataset(Dataset):
         assert image_id in self.imageid2filename.keys()
         image_fn = self.imageid2filename[image_id]
         image = Image.open(image_fn)
+        image = image.convert('RGB')
 
         #image_arr = resize_image(image, self.image_size)
         #image_tensor = torch.tensor(image_arr).permute(2, 0, 1).float()

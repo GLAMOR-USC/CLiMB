@@ -134,7 +134,7 @@ class VQADataset(Dataset):
 def batch_collate(batch, tokenizer, visual_mode, num_labels):
 
     #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
-    pad_token = tokenizer.pad_token_id
+    pad_token = 0   # tokenizer.pad_token_id
 
     # Pad the text inputs
     # Do we need to set a global MAX_LEN to clip the super long questions? (this really depends on the dataset)
@@ -178,7 +178,7 @@ def batch_collate(batch, tokenizer, visual_mode, num_labels):
             image_tensors_padded.append(padded_tensor)
         images = torch.stack(image_tensors_padded, dim=0)        # Pads region features with 0 vectors to give (B, R, hv) tensor
 
-    return {'questions': questions,
+    return {'raw_texts': questions,
             'input_ids': input_ids,
             'attn_mask': attn_mask,
             'images': images,
@@ -188,7 +188,7 @@ def batch_collate(batch, tokenizer, visual_mode, num_labels):
 def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_mode):
 
     batch_size = args.batch_size
-    shuffle = args.shuffle
+    shuffle = True if split == 'train' else False
 
     logger.info("Creating VQAv2 {} dataloader with batch size of {}".format(split, batch_size))
 
@@ -198,6 +198,7 @@ def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visua
         dataset,
         num_workers=args.num_workers,
         batch_size=batch_size,
+        shuffle=shuffle,
         collate_fn=lambda x: batch_collate(x, tokenizer, visual_mode, num_labels))
     return dataloader
 
