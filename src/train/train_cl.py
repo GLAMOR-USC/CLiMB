@@ -35,7 +35,7 @@ device = torch.device(
 
 class Args:
     def __init__(self):
-        self.batch_size = 32
+        self.batch_size = 64
         self.shuffle = True
         self.num_workers = 2
         self.encoder_name = 'vilt'

@@ -114,7 +114,7 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
             optimizer.zero_grad()
 
         # Do evaluation after epoch
-        eval_score = eval_vqa(args, model, vqa_val_dataloader, device)
+        eval_score = eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
@@ -124,7 +124,7 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
 
     return best_score, best_model
 
-def eval_vqa(args, model, vqa_val_dataloader, device):
+def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
 
     model.eval()
     eval_score = 0
