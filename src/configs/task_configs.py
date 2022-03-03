@@ -7,6 +7,7 @@ mscoco_config = {
 }
 
 vqa_config = {
+        'task_name': 'VQAv2',
         'data_dir': '/data/datasets/MCL/vqav2',
         'images_source': 'ms-coco',
         'splits': ['train', 'val'],

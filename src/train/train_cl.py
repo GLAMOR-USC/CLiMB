@@ -29,13 +29,13 @@ from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 logger = logging.getLogger(__name__)
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-#device = torch.device(
-#        "cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cpu")
 
 class Args:
     def __init__(self):
-        self.batch_size = 4
+        self.batch_size = 16
         self.shuffle = True
         self.num_workers = 2
         self.visual_mode = 'pil-image'
@@ -51,15 +51,18 @@ load_encoder_method = load_encoder_map[args.encoder_name]
 encoder = load_encoder_method(args.pretrained_model_name, device)
 
 # Ensure all the tasks for continual learning are supported VL tasks
-for task_name in args.ordered_cl_tasks:
-    assert task_name in SUPPORTED_VL_TASKS
+for task_key in args.ordered_cl_tasks:
+    assert task_key in SUPPORTED_VL_TASKS
 
-for task_num, task_name in enumerate(args.ordered_cl_tasks):
+for task_num, task_key in enumerate(args.ordered_cl_tasks):
     # Load the correct training method for current CL task, and call the training method
 
-    logger.info("----------------------------------------------------")
-    logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num, task_name))
-    train_method = task_configs[task_name]['train_method']
+    task_name = task_configs[task_key]['task_name']
+    logger.info("-"*100)
+    logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
+    train_method = task_configs[task_key]['train_method']
     best_eval_score, best_model = train_method(args, encoder, task_configs, model_config, tokenizer, device)
+
+    logger.info("Best {} evaluation score = {}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
     # Save best model checkpoint, and separately save the models' Encoder object

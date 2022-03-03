@@ -29,9 +29,9 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def compute_score_with_logits(logits, labels):
+def compute_score_with_logits(logits, labels, device):
     logits = torch.max(logits, 1)[1].data # argmax
-    one_hots = torch.zeros(*labels.size())#.cuda()
+    one_hots = torch.zeros(*labels.size()).to(device)
     one_hots.scatter_(1, logits.view(-1, 1), 1)
     scores = (one_hots * labels)
     return scores
@@ -41,19 +41,20 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
     vqa_config = task_configs['vqa']
     data_dir = vqa_config['data_dir']
     num_labels = vqa_config['num_labels']
-    images_source = vqa_config['images_source']
 
+    # Load COCO Images dataset for image data backbone
+    images_source = vqa_config['images_source']
     mscoco_config = task_configs[images_source]
     images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
 
+    # Create model
     encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-
-    # Create model
     classifier_class = model_config['classifier_class']
     model = classifier_class(encoder=encoder, 
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels)
+    batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
 
     # Create dataloaders for training and validation
@@ -99,11 +100,11 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
 
         # Training loop for epoch
         for step, batch in enumerate(tqdm(vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
-            images = batch['images']
-            texts = batch['questions']
-            target = batch['target_scores']
+            inputs = batch2inputs_converter(batch)
+            target = batch['target_scores'].to(device)
 
-            output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
+            #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
+            output = model(**inputs)
             logits = output[1]
             loss = loss_criterion(logits, target)
 
@@ -111,11 +112,9 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
 
             optimizer.step()
             optimizer.zero_grad()
-            #if (step+1) % 5 == 0:
-            #    break
 
         # Do evaluation after epoch
-        eval_score = eval_vqa(args, model, vqa_val_dataloader)
+        eval_score = eval_vqa(args, model, vqa_val_dataloader, device)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
@@ -123,22 +122,22 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
-        return best_score, best_model
+    return best_score, best_model
 
-def eval_vqa(args, model, vqa_val_dataloader):
+def eval_vqa(args, model, vqa_val_dataloader, device):
 
     model.eval()
     eval_score = 0
 
     for step, batch in enumerate(tqdm(vqa_val_dataloader, desc='Evaluating on VQA val set')):
-        images = batch['images']
-        texts = batch['questions']
-        target = batch['target_scores']
+        inputs = batch2inputs_converter(batch)
+        target = batch['target_scores'].to(device)
 
-        output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
+        #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
+        output = model(**inputs)
         logits = output[1]
 
-        answer_scores = compute_score_with_logits(logits, target)
+        answer_scores = compute_score_with_logits(logits, target, device)
         batch_scores = torch.sum(answer_scores, 1)
 
         eval_score += batch_scores.sum().item()

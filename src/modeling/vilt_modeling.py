@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 
 import numpy as np
 import torch
@@ -8,6 +9,12 @@ import torch.nn.functional as F
 
 from transformers import BertConfig, BertTokenizer, BertModel
 from transformers import ViltProcessor, ViltModel
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+        datefmt='%m/%d/%Y %H:%M:%S',
+        level=logging.INFO)
 
 class ViltEncoder(nn.Module):
 
@@ -57,7 +64,15 @@ class ViltForImageTextClassification(nn.Module):
 
 def load_vilt_encoder(pretrained_vilt_name, device):
 
+    logger.info("-"*100)
+    logger.info("Loading pretrained ViLT model: {}".format(pretrained_vilt_name))
     vilt_processor = ViltProcessor.from_pretrained(pretrained_vilt_name)
     vilt = ViltModel.from_pretrained(pretrained_vilt_name)
     vilt_encoder = ViltEncoder(vilt_processor, vilt, device)
+    logger.info("Successfully loaded pretrained ViLT model")
     return vilt_encoder
+
+def convert_batch_to_model_input_dict(batch):
+
+    return {'images': batch['images'],
+            'texts': batch['raw_texts']}
