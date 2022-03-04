@@ -94,12 +94,11 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
         'optimizer_state': optimizer.state_dict()
     }
 
+    model.train()
     for epoch in range(num_epochs):
-        model.train()
-        model.zero_grad()
-
         # Training loop for epoch
         for step, batch in enumerate(tqdm(vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+            model.zero_grad()
             inputs = batch2inputs_converter(batch)
             target = batch['target_scores'].to(device)
 
@@ -134,7 +133,8 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
         target = batch['target_scores'].to(device)
 
         #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-        output = model(**inputs)
+        with torch.no_grad():
+            output = model(**inputs)
         logits = output[1]
 
         answer_scores = compute_score_with_logits(logits, target, device)
@@ -143,4 +143,6 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
         eval_score += batch_scores.sum().item()
 
     eval_score = eval_score/len(vqa_val_dataloader.dataset)*100.0
+
+    model.train()
     return eval_score

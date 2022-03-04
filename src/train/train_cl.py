@@ -26,6 +26,11 @@ from modeling import load_encoder_map
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 
+def set_seed(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
 logger = logging.getLogger(__name__)
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -41,9 +46,10 @@ class Args:
         self.encoder_name = 'vilt'
         self.pretrained_model_name = 'dandelin/vilt-b32-mlm'
         self.ordered_cl_tasks = ['vqa']
+        self.seed = 42
 args = Args()
 
-
+set_seed(args)
 # Load the correct Encoder model, based on encoder_name argument
 model_config = model_configs[args.encoder_name]
 load_encoder_method = load_encoder_map[args.encoder_name]
