@@ -16,7 +16,7 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-class ViltEncoder(nn.Module):
+class ViltEncoderWrapper(nn.Module):
 
     def __init__(self, processor, vilt, device):
         '''
@@ -44,7 +44,7 @@ class ViltForImageTextClassification(nn.Module):
     def __init__(self, encoder, encoder_dim, num_labels):
 
         '''
-        encoder - instance of ViltEncoder class
+        encoder - instance of ViltEncoderWrapper class
         encoder_dim - output dimension of vilt encoder
         num_labels - number of labels for classification task
         '''
@@ -73,7 +73,7 @@ def load_vilt_encoder(pretrained_vilt_name, device):
     logger.info("Loading pretrained ViLT model: {}".format(pretrained_vilt_name))
     vilt_processor = ViltProcessor.from_pretrained(pretrained_vilt_name)
     vilt = ViltModel.from_pretrained(pretrained_vilt_name)
-    vilt_encoder = ViltEncoder(vilt_processor, vilt, device)
+    vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
     logger.info("Successfully loaded pretrained ViLT model")
     return vilt_encoder
 
