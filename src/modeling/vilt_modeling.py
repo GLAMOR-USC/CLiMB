@@ -52,7 +52,12 @@ class ViltForImageTextClassification(nn.Module):
         super().__init__()
 
         self.vilt_encoder = encoder
-        self.clf_layer = nn.Linear(encoder_dim, num_labels)
+        self.clf_layer = nn.Sequential(
+                            nn.Linear(encoder_dim, encoder_dim*2),
+                            nn.LayerNorm(encoder_dim*2),
+                            nn.GELU(),
+                            nn.Linear(encoder_dim*2, num_labels)
+                        )
 
     def forward(self, images, texts):
 

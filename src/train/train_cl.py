@@ -25,11 +25,7 @@ from modeling import load_encoder_map
 
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
-
-def set_seed(args):
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+from utils.seed_utils import set_seed
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +36,7 @@ device = torch.device(
 
 class Args:
     def __init__(self):
-        self.batch_size = 64
+        self.batch_size = 60
         self.shuffle = True
         self.num_workers = 2
         self.encoder_name = 'vilt'
@@ -68,6 +64,6 @@ for task_num, task_key in enumerate(args.ordered_cl_tasks):
     train_method = task_configs[task_key]['train_method']
     best_eval_score, best_model = train_method(args, encoder, task_configs, model_config, tokenizer, device)
 
-    logger.info("Best {} evaluation score = {}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
+    logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
     # Save best model checkpoint, and separately save the models' Encoder object
