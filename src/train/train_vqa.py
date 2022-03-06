@@ -19,6 +19,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.optim import AdamW
+from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
 from data.visionlanguage_datasets.vqa_dataset import build_vqa_dataloader
@@ -85,7 +86,19 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon)
+    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
+    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
+    # Create Scheduler
+    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L263
+    max_steps = len(vqa_train_dataloader) * num_epochs
+    warmup_ratio = 0.1 # TODO remove hard code
+    scheduler = get_polynomial_decay_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=int(max_steps * warmup_ratio),
+        num_training_steps=max_steps,
+        lr_end=0,
+        power=1,
+    )
 
     best_score = 0
     best_model = {
@@ -94,22 +107,24 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
         'optimizer_state': optimizer.state_dict()
     }
 
+    model.zero_grad()
     model.train()
     for epoch in range(num_epochs):
         # Training loop for epoch
         for step, batch in enumerate(tqdm(vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
-            model.zero_grad()
             inputs = batch2inputs_converter(batch)
             target = batch['target_scores'].to(device)
 
             #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
             output = model(**inputs)
             logits = output[1]
-            loss = loss_criterion(logits, target)
+            # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
+            loss = loss_criterion(logits, target) * target.shape[1]
 
             loss.backward()
 
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad()
 
         # Do evaluation after epoch
