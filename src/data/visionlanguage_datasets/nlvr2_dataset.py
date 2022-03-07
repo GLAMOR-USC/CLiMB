@@ -59,14 +59,16 @@ class NLVR2Dataset(Dataset):
                     ))
                     example["sentence"] = str(annotation["sentence"])
                     example["labels"] = 0 if str(annotation["label"]) == "False" else 1
-                    try: #TODO: re-download the missing/incorrect images
+                    ''' # debug
+                    try: 
                         assert os.path.exists(example["image_id_0"]), "img1 not exists" 
                         assert os.path.exists(example["image_id_1"]), "img2 not exists" 
                         img1 = self.get_pil_image(example["image_id_0"])
                         img2 = self.get_pil_image(example["image_id_1"])
                     except:
-                        #logger.info(annotation)
+                        logger.info(annotation)
                         continue
+                    '''
                     self.data.append(example)
 
             with open(self.cached_data_file, 'wb') as f:
@@ -125,7 +127,7 @@ if __name__ == '__main__':
             self.num_workers = 0
     args = Args()
 
-    nlvr2_dataloader = build_nlvr2_dataloader(args, data_dir, 'val', 'pil-image')
+    nlvr2_dataloader = build_nlvr2_dataloader(args, data_dir, 'train', 'pil-image')
 
     for batch in tqdm(nlvr2_dataloader):
         print(batch['raw_texts'])
