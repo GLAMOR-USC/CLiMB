@@ -173,20 +173,6 @@ if __name__ == '__main__':
     annotation_dir     = '/data/datasets/MCL/ms-coco/detections/annotations/'
     split               = 'train'
     annotation_file     = os.path.join(annotation_dir, 'instances_{}2017.json'.format(split))
-    '''
-    trainset            = MSCOCOSegmentation(root=images_dir+ 'images/',
-                                            annotation=annotation_file,
-                                            image_datasets = MSCOCOImagesDataset(images_dir),
-                                            #transforms=get_transform()
-                                            )
-
-
-    print(annotations['bmask'].shape)
-    print(annotations['mask'].shape)
-    '''
-
-    #dataset = VQADataset(data_dir, None, 'train', None)
-
 
     trainset    = MSCOCOSegmentation(root=images_dir+ 'images/',
                                             annotation=annotation_file,
