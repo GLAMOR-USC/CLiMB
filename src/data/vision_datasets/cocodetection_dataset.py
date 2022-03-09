@@ -8,6 +8,7 @@ import numpy as np
 import logging
 import pdb
 from tqdm import tqdm
+import pickle as pkl
 
 ## image_dataset -- tejas
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
@@ -18,17 +19,19 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-class MSCOCODataset(torch.utils.data.Dataset):
-    def __init__(self, annotation_dir, split, images_dataset):
+class MSCOCODetectionDataset(torch.utils.data.Dataset):
 
+    def __init__(self, annotation_dir, split, images_dataset, visual_mode):
+        
         self.images_dataset = images_dataset
         self.transforms = self.images_dataset.raw_transform
+        self.visual_mode = visual_mode
 
         annotation_file     = os.path.join(annotation_dir, 'instances_{}2017.json'.format(split))
         self.coco = COCO(annotation_file)
         self.ids = list(sorted(self.coco.imgs.keys()))
 
-        coco_cached_file = os.path.join(annotation_dir, 'cached_data', 'coco_{}.pkl'.format(split))
+        coco_cached_file = os.path.join(annotation_dir, 'cached_data', 'coco_detection_{}.pkl'.format(split))
 
         if os.path.isfile(coco_cached_file):
             # Load image IDs and annotations from cached file
@@ -43,7 +46,7 @@ class MSCOCODataset(torch.utils.data.Dataset):
             logger.info("Loading COCO information into memory...")
             ###load all the images and annotations
             #for index in self.ids:
-            for index in tqdm(self.ids):
+            for index in self.ids:
                 # Own coco file
                 coco = self.coco
                 # Image ID
@@ -100,21 +103,6 @@ class MSCOCODataset(torch.utils.data.Dataset):
                 my_annotation["image_id"] = img_id
                 my_annotation["area"] = areas
                 my_annotation["iscrowd"] = iscrowd
-                
-                ###This add the binary mask to annotations 
-                bmask = np.zeros((img_info['height'],img_info['width']))
-                for i in range(len(anns)):
-                    bmask = np.maximum(self.coco.annToMask(anns[i]), bmask)
-                my_annotation["bmask"] = bmask
-
-                ###This add the multiclass mask
-                mask = np.zeros((img_info['height'], img_info['width']))
-                for i in range(len(anns)):
-                    #print(anns[i]['category_id'], len(cats))
-                    className = self.getClassName(anns[i]['category_id'], cats)
-                    pixel_value = cat_names.index(className)+1
-                    mask = np.maximum(self.coco.annToMask(anns[i])*pixel_value, mask)
-                my_annotation["mask"] = mask
 
                 image_ids.append(img_id)
                 annotations.append(my_annotation)
@@ -130,6 +118,8 @@ class MSCOCODataset(torch.utils.data.Dataset):
                         }
             pkl.dump(cache_data, open(coco_cached_file, 'wb'))
 
+        logger.info("Loaded COCO detection {} set with {} examples".format(split, len(self.image_ids)))
+
     def getClassName(self, classID, cats):
         for i in range(len(cats)):
             if cats[i]['id']==classID:
@@ -137,57 +127,30 @@ class MSCOCODataset(torch.utils.data.Dataset):
         return "None"
         #print('The class name is', getClassName(77, cats))
 
-class MSCOCOSegmentation(MSCOCODataset):
-
-    def __init__(self, annotation_dir, split, images_dataset, visual_mode):
-        
-        super(MSCOCOSegmentation, self).__init__(annotation_dir, split, images_dataset)
-        self.visual_mode = visual_mode
-        self.transform = images_dataset.raw_transform
-
-    def __getitem__(self, index):
-
-        image_id = self.image_ids[index]
-        image = self.images_dataset.get_image_data(img_id, self.visual_mode)
-
-        bmask = self.annotations[index]['bmask']
-        bmask = self.transform(Image.fromarray(np.uint32(bmask), 'RGB'))
-        return image, bmask
-
-    def __len__(self):
-        return len(self.images)
-        
-
-class MSCOCODetection(MSCOCODataset):
-
-    def __init__(self, annotation_dir, split, images_dataset, visual_mode):
-        super(MSCOCODetection, self).__init__(annotation_dir, split, images_dataset)
-        self.visual_mode = visual_mode
-
     def __getitem__(self, index):
         image_id = self.image_ids[index]
         image = self.images_dataset.get_image_data(img_id, self.visual_mode)
         return image, self.annotations[index]['boxes']
 
     def __len__(self):
-        return len(self.images)
+        return len(self.image_ids)
 
-def build_mscoco_segmentation_dataloader(args, annotation_dir, split):
-    ###Dataloader for MSCOCO
-    logger.info("Creating MSCOCO  {} dataloader with batch size of {}".format(split, args.batch_size))
-    dataset    = MSCOCOSegmentation(annotation_dir=annotation_dir,
+def build_mscoco_detection_dataloader(args, annotation_dir, split, visual_mode):
+    ###Dataloader for MSCOCO detection
+    logger.info("Creating MSCOCO-Detection {} dataloader with batch size of {}".format(split, args.batch_size))
+    dataset    = MSCOCODetectionDataset(annotation_dir=annotation_dir,
                                     split=split,
                                     images_dataset = mscoco_images_dataset,
-                                    visual_mode=args.visual_mode
+                                    visual_mode=visual_mode
                                     )
     shuffle = True if split == 'train' else False
 
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        num_workers=args.num_workers,
-        batch_size=args.batch_size,
-        shuffle=shuffle)
+    dataloader = torch.utils.data.DataLoader(dataset,
+                                            num_workers=args.num_workers,
+                                            batch_size=args.batch_size,
+                                            shuffle=shuffle)
     return dataloader
+
 
 
 if __name__ == '__main__':
@@ -207,15 +170,7 @@ if __name__ == '__main__':
     mscoco_images_dataset = MSCOCOImagesDataset(images_dir)
     print(mscoco_images_dataset.get_image_data( 1, 'raw').shape)
     print(mscoco_images_dataset.get_image_data( 9, 'raw').shape)
-    segmentation_train_set    = MSCOCOSegmentation(annotation_dir=annotation_dir,
-                                                    split='train',
-                                                    images_dataset = mscoco_images_dataset,
-                                                    visual_mode=args.visual_mode
-                                                    )
 
-    img, bmask  = segmentation_train_set[0]
-    print(img.shape, bmask.shape)
-
-    mscoco_segmentation_train_dataloader = build_mscoco_segmentation_dataloader(args, annotation_dir, split='train')
-    mscoco_segmentation_val_dataloader = build_mscoco_segmentation_dataloader(args, annotation_dir, split='val')
+    mscoco_detection_train_dataloader = build_mscoco_detection_dataloader(args, annotation_dir, split='train', visual_mode=args.visual_mode)
+    mscoco_detection_val_dataloader = build_mscoco_detection_dataloader(args, annotation_dir, split='val', visual_mode=args.visual_mode)
 
