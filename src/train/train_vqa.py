@@ -12,6 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
+import wandb
 
 sys.path.insert(0, '.')
 
@@ -127,9 +128,13 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
             scheduler.step()
             optimizer.zero_grad()
 
+            if (step + 1) % 100 == 0:
+                wandb.log({'vqa': {'loss': loss.item()}})
+
         # Do evaluation after epoch
         eval_score = eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+        wandb.log({'vqa': {'val_score': eval_score}})
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
             best_score = eval_score

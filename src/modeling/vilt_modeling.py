@@ -67,6 +67,10 @@ class ViltForImageTextClassification(nn.Module):
         output_logits = self.clf_layer(encoder_output)
         return encoder_output, output_logits
 
+    def get_encoder(self):
+
+        return self.vilt_encoder
+
 def load_vilt_encoder(pretrained_vilt_name, device):
 
     logger.info("-"*100)
