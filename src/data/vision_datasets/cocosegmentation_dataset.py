@@ -10,6 +10,8 @@ import pdb
 from tqdm import tqdm
 import pickle as pkl
 
+from torchvision import transforms as T
+
 ## image_dataset -- tejas
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
 
@@ -23,7 +25,10 @@ class MSCOCOSegmentationDataset(torch.utils.data.Dataset):
     def __init__(self, annotation_dir, split, images_dataset, visual_mode, mask_type):
 
         self.images_dataset = images_dataset
-        self.transform = self.images_dataset.raw_transform
+        self.transform = T.Compose([
+            T.Resize(images_dataset.image_size, interpolation=Image.NEAREST),
+            T.ToTensor(),                                 # [0, 1]
+        ])
         self.visual_mode = visual_mode
         self.mask_type = mask_type
         assert self.mask_type in ['binary', 'semantic']
@@ -114,8 +119,7 @@ class MSCOCOSegmentationDataset(torch.utils.data.Dataset):
                 className = self.getClassName(anns[i]['category_id'], cats)
                 pixel_value = cat_names.index(className)+1
                 mask = np.maximum(self.coco.annToMask(anns[i])*pixel_value, mask)
-        mask = self.transform(Image.fromarray(np.uint32(mask), 'RGB'))
-
+        mask = self.transform(Image.fromarray(mask))
         return image, mask
 
     def __len__(self):
