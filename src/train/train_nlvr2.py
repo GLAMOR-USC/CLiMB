@@ -123,7 +123,7 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
 
     model.eval()
     eval_score = 0
-    for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on VQA val set')):
+    for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on NLVR2 val set')):
         inputs = batch2inputs_converter(batch)
         with torch.no_grad():
             output = model.fwd_multi_imgs(**inputs)
