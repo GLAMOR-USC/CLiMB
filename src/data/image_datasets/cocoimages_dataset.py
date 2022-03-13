@@ -21,7 +21,7 @@ from utils.image_utils import resize_image
 
 class MSCOCOImagesDataset(Dataset):
 
-    def __init__(self, coco_dir, image_size=(224,224)):
+    def __init__(self, coco_dir, image_size=(384,640)):
 
         self.images_dir = os.path.join(coco_dir, 'images')          # Images across all 2017 splits stored in same directory
         self.image_size = image_size
