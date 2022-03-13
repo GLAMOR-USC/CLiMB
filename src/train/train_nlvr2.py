@@ -47,7 +47,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels,
                              num_images=2)
-    model.expand_modality_type_embeddings(num_modalities=3)
+    model.expand_modality_type_embeddings(type_vocab_size=3)
     model.to(device)
 
     # Create dataloaders for training and validation
