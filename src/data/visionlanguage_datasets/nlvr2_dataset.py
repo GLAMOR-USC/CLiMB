@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import Dataset
 
 from PIL import Image
-#from torchvision import transforms as T
+from torchvision import transforms as T
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -76,12 +76,13 @@ class NLVR2Dataset(Dataset):
 
         self.n_examples = len(self.data)
         logger.info("Loaded NLVRv2 {} dataset, with {} examples".format(split, self.n_examples))
-#        self.pil_transform = T.Resize(image_size)
+        self.pil_transform = T.Resize(size=384, max_size=640)
 
     def get_pil_image(self, image_fn):
         image = Image.open(image_fn)
         image = image.convert('RGB')
-#        image = self.pil_transform(image)
+        if min(list(image.size)) > 384:
+            image = self.pil_transform(image)
         return image
 
     def __len__(self):

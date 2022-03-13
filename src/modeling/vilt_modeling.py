@@ -5,6 +5,7 @@ import itertools
 import pdb
 import numpy as np
 import torch
+import time
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -45,7 +46,6 @@ class ViltEncoderWrapper(nn.Module):
         self.device = device
 
     def process_inputs(self, images, texts):
-        #TODO: trucation somehow triggers "Ignored unknown kwarg option direction"
         encodings = self.processor(images=images, text=texts, 
             padding=True, truncation=True, return_tensors='pt').to(self.device)
 
@@ -68,7 +68,7 @@ class ViltForImageTextClassification(nn.Module):
         '''
 
         super().__init__()
-
+        self.encoder_dim = encoder_dim
         self.vilt_encoder = encoder
         self.clf_layer = nn.Sequential(
                             nn.Linear(encoder_dim*num_images, encoder_dim*2),
@@ -76,6 +76,16 @@ class ViltForImageTextClassification(nn.Module):
                             nn.GELU(),
                             nn.Linear(encoder_dim*2, num_labels)
                         )
+
+    def expand_modality_type_embeddings(self, num_modalities=3):
+        self.vilt_encoder.vilt.config.modality_type_vocab_size = num_modalities
+        #https://github.com/dandelin/ViLT/blob/762fd3975c180db6fc88f577cf39549983fa373a/vilt/modules/vilt_module.py#L85
+        emb_data = self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data
+        self.vilt_encoder.vilt.embeddings.token_type_embeddings = nn.Embedding(num_modalities, self.encoder_dim)
+        self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[0, :] = emb_data[0, :]
+        self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[1, :] = emb_data[1, :]
+        self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[2, :] = emb_data[1, :]
+
 
     def forward(self, images, texts):
 
@@ -105,8 +115,8 @@ class ViltForImageTextClassification(nn.Module):
                 'attention_mask': attention_mask,
                 'token_type_ids': token_type_ids,
                 'pixel_values': pixel_values[:, i, :, :, :],
-                'pixel_mask': pixel_mask[:, i, :, :] if pixel_mask is not None else None, #TODO, None in the example code
-                'image_token_type_idx': i + 1, #TODO: somehow triggers error when PLM='dandelin/vilt-b32-mlm'
+                'pixel_mask': pixel_mask[:, i, :, :],
+                'image_token_type_idx': i + 1,
             }
             pooled_out = self.vilt_encoder(**encodings)
             pooler_outputs.append(pooled_out)

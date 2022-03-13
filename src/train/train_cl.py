@@ -17,7 +17,6 @@ sys.path.insert(0, '.')
 import numpy as np
 import torch
 from tqdm import tqdm
-import wandb
 
 from transformers import BertTokenizer
 
@@ -40,7 +39,7 @@ class Args:
         self.shuffle = True
         self.num_workers = 2
         self.encoder_name = 'vilt'
-        self.pretrained_model_name = 'dandelin/vilt-b32-finetuned-nlvr2' #TODO
+        self.pretrained_model_name = "dandelin/vilt-b32-mlm"
         self.ordered_cl_tasks = ['nlvr2']
         self.seed = 42
 

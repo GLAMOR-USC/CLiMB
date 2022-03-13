@@ -11,10 +11,8 @@ import shutil
 import pickle as pkl
 import copy
 import pdb
+import wandb
 from tqdm import tqdm
-
-sys.path.insert(0, '.')
-
 import numpy as np
 import torch
 from torch import nn
@@ -22,6 +20,11 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.visionlanguage_datasets.nlvr2_dataset import build_nlvr2_dataloader
+
+sys.path.insert(0, '.')
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["WANDB_START_METHOD"] = "thread"
+wandb.init(project='nlvr')
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -36,6 +39,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
     num_labels = nlvr_config['num_labels']
 
     # Create model
+    batch2inputs_converter = model_config['batch2inputs_converter']
     encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
     classifier_class = model_config['classifier_class']
@@ -43,7 +47,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels,
                              num_images=2)
-    batch2inputs_converter = model_config['batch2inputs_converter']
+    model.expand_modality_type_embeddings(num_modalities=3)
     model.to(device)
 
     # Create dataloaders for training and validation
@@ -108,9 +112,14 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             scheduler.step()
             optimizer.zero_grad()
 
+            if step % 100 == 0:
+                wandb.log({'nlvr': {'loss': loss.item()}})
+
         # Do evaluation after epoch
         eval_score = eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+        wandb.log({'nlvr': {'val_score': eval_score}})
+
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
             best_score = eval_score

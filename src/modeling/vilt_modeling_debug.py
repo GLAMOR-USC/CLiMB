@@ -3,6 +3,7 @@ import sys
 import logging
 import itertools
 import pdb
+import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -46,7 +47,6 @@ class ViltForImageTextClassification(nn.Module):
 
 
     def process_inputs(self, images, texts):
-        #TODO: trucation somehow triggers "Ignored unknown kwarg option direction"
         encodings = self.processor(images=images, text=texts, 
             padding=True, truncation=True, return_tensors='pt').to(self.device)
 
@@ -55,6 +55,7 @@ class ViltForImageTextClassification(nn.Module):
 
     def forward(self, images, texts, num_images=2):
         # flatten n images & pre-process
+        t0 = time.time()
         flat_images_list = list(itertools.chain(*images))
         encodings = self.process_inputs(flat_images_list, texts)
 
@@ -64,6 +65,7 @@ class ViltForImageTextClassification(nn.Module):
         bs = len(input_ids)
         pixel_values = encodings['pixel_values'].view(bs, num_images, *encodings["pixel_values"].shape[-3:])
         pixel_mask = encodings['pixel_mask'].view(bs, num_images, *encodings["pixel_mask"].shape[-2:])
+        t1 = time.time()
 
         # https://github.com/huggingface/transformers/blob/v4.16.2/src/transformers/models/vilt/modeling_vilt.py#L1351
         pooler_outputs = []
@@ -74,15 +76,55 @@ class ViltForImageTextClassification(nn.Module):
                 'attention_mask': attention_mask,
                 'token_type_ids': token_type_ids,
                 'pixel_values': pixel_values[:, i, :, :, :],
-                'pixel_mask': pixel_mask[:, i, :, :] if pixel_mask is not None else None, #TODO, None in the example code
-                'image_token_type_idx': i + 1, #TODO: somehow triggers error when PLM='dandelin/vilt-b32-mlm'
+                'pixel_mask': pixel_mask[:, i, :, :],
+                'image_token_type_idx': i + 1,
             }
             pooled_out = self.model.vilt(**encodings).pooler_output
             pooler_outputs.append(pooled_out)
         pooled_output = torch.cat(pooler_outputs, dim=-1) # [bs, 1536]
 
         output_logits = self.model.classifier(pooled_output)
+        t2 = time.time()
+        #print('preprocess:', t1-t0, 'forward', t2-t1)
         return pooled_output, output_logits
+
+    def fwd_single(self, images, texts, num_images=2):
+        t0 = time.time()
+        batch_pooled_outputs, batch_output_logits = [], []
+        for img_pair, txt in zip(images, texts):
+            encodings = self.process_inputs(img_pair, txt)
+
+            input_ids, attention_mask, token_type_ids = \
+                encodings['input_ids'], encodings['attention_mask'], encodings['token_type_ids']
+            pixel_values = encodings['pixel_values'].unsqueeze(0)
+            pixel_mask = encodings['pixel_mask'].unsqueeze(0)
+
+            # https://github.com/huggingface/transformers/blob/v4.16.2/src/transformers/models/vilt/modeling_vilt.py#L1351
+            pooler_outputs = []
+            for i in range(num_images):
+                # forward every image through the model
+                encodings = {
+                    'input_ids': input_ids,
+                    'attention_mask': attention_mask,
+                    'token_type_ids': token_type_ids,
+                    'pixel_values': pixel_values[:, i, :, :, :],
+                    'pixel_mask': pixel_mask[:, i, :, :],
+                    'image_token_type_idx': i + 1,
+                }
+                pooled_out = self.model.vilt(**encodings).pooler_output
+                pooler_outputs.append(pooled_out)
+
+            pooled_output = torch.cat(pooler_outputs, dim=-1) # [bs, 1536]
+            output_logits = self.model.classifier(pooled_output)
+
+            batch_pooled_outputs.append(pooled_output)
+            batch_output_logits.append(output_logits)
+
+        batch_pooled_outputs = torch.cat(batch_pooled_outputs)
+        batch_output_logits = torch.cat(batch_output_logits)
+        t1 = time.time()
+        print('forward', t1-t0)
+        return batch_pooled_outputs, batch_output_logits
 
 def load_vilt(pretrained_vilt_name, device):
 

@@ -11,6 +11,7 @@ import shutil
 import pickle as pkl
 import copy
 import yaml
+import pdb
 
 sys.path.insert(0, '.')
 
@@ -18,8 +19,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import wandb
-
-from transformers import BertTokenizer
 
 from modeling.vilt_modeling_debug import load_vilt
 
@@ -64,6 +63,7 @@ def eval_nlvr2(args, model, task_configs, model_config, device):
         inputs = batch2inputs_converter(batch)
         with torch.no_grad():
             output = model(**inputs)
+#            output = model.fwd_single(**inputs)
             logits = output[1]
 
         batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
