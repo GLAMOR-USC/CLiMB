@@ -34,23 +34,38 @@ device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu")
 #device = torch.device("cpu")
 
-class Args:
-    def __init__(self):
-        self.batch_size = 32
-        self.shuffle = True
-        self.num_workers = 2
-        self.encoder_name = 'vilt'
-        self.pretrained_model_name = 'dandelin/vilt-b32-mlm' #TODO
-        self.ordered_cl_tasks = ['vqa']
-        self.seed = 42
+def main():
 
-        self.output_dir = '/data/experiments/MCL/'
-        self.cl_algorithm = 'singletask_ft'     # Must not contain hyphens
-        self.wandb_project_name = 'vl-cl'
+    parser = argparse.ArgumentParser()
 
-if __name__ == '__main__':
-    args = Args()
+    ## Required parameters
+    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
+                        help="The name of the base pretrained encoder.")
+    parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
+                        help="Name of pretrained model weights to load.")
+    parser.add_argument("--ordered_cl_tasks", type=str, required=True,
+                        help="Ordered list of VL task keys for continual learning, seprated by commas.")
+    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft', 'sequential_ft'],
+                        help="Name of Continual Learning algorithm used.")
 
+    parser.add_argument("--output_dir", type=str, required=True,
+                        help="Name of output directory, where all experiment results and checkpoints are saved.")
+    parser.add_argument("--wandb_project_name", type=str, default="vl-cl",
+                        help="Name of W&B project where experiments are logged.")
+
+
+    parser.add_argument("--batch_size", type=int, default=32,
+                        help="Batch size.")
+    parser.add_argument("--num_workers", type=int, default=2,
+                        help="Number of workers for dataloader")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed.")
+
+    
+    args = parser.parse_args()
+    args.ordered_cl_tasks = args.ordered_cl_tasks.split(',')
+
+    # Set up experiment directories
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
     for i, task_key in enumerate(args.ordered_cl_tasks):
         experiment_name = '{}-task{}_{}'.format(experiment_name, i, task_key)
@@ -59,25 +74,30 @@ if __name__ == '__main__':
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
-    logger.info('W&B project name: {}'.format(args.wandb_project_name))
+    # Create W&B experiment
+    logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
     wandb.init(project=args.wandb_project_name,
         name=experiment_name,
-        entity='tejas1995')
+        entity='tejas1995',
+        reinit=True)
 
     set_seed(args)
+
     # Load the correct Encoder model, based on encoder_name argument
     model_config = model_configs[args.encoder_name]
     load_encoder_method = load_encoder_map[args.encoder_name]
     encoder = load_encoder_method(args.pretrained_model_name, device)
 
     # Ensure all the tasks for continual learning are supported VL tasks
+    if args.cl_algorithm == 'singletask_ft':
+        assert len(args.ordered_cl_tasks) == 1
     for task_key in args.ordered_cl_tasks:
         assert task_key in SUPPORTED_VL_TASKS
 
     results = []
     for task_num, task_key in enumerate(args.ordered_cl_tasks):
-        # Load the correct training method for current CL task, and call the training method
 
+        # Load the correct training method for current CL task, and call the training method
         task_name = task_configs[task_key]['task_name']
         logger.info("-"*100)
         logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
@@ -106,3 +126,6 @@ if __name__ == '__main__':
         results.append(task_results)
         json.dump(results, open(results_file, 'w'))
         logger.info("Saved continual learning results so far!")
+
+if __name__ == '__main__':
+    main()
