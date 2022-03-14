@@ -36,7 +36,7 @@ device = torch.device(
 
 class Args:
     def __init__(self):
-        self.task_name = 'nlvr2'
+        self.task_name = 'vqa'
         self.batch_size = 64
         self.shuffle = True
         self.num_workers = 2
@@ -127,7 +127,7 @@ if __name__ == '__main__':
 
     if args.task_name in ckpt_path: # model finetuned on the same task
         model.load_state_dict(checkpoint['model'])
-    else: # model finetuned on the same task; the classifier has different dimensions
+    else: # model finetuned on a different task; thus, the classifier has different dimensions
         model_dict = model.state_dict()
         ckpt_dict = checkpoint['model']
         for k in ckpt_dict.keys():
@@ -136,5 +136,5 @@ if __name__ == '__main__':
                 #print(k, 'loaded!')
     model.to(device)
 
-    eval_nlvr2(args, model, task_config, model_config, device)
+    #eval_nlvr2(args, model, task_config, model_config, device)
     eval_vqa(args, model, task_config, model_config, device)
