@@ -1,5 +1,5 @@
-from train.train_vqa import train_vqa
-from train.train_nlvr2 import train_nlvr2
+from train.train_vqa import train_vqa, eval_vqa_forgetting
+from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
 
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2']
 
@@ -19,7 +19,8 @@ vqa_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_vqa
+        'train_method': train_vqa,
+        'eval_forgetting_method': eval_vqa_forgetting
 }
 
 nlvr_config = {
@@ -33,7 +34,8 @@ nlvr_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_nlvr2
+        'train_method': train_nlvr2,
+        'eval_forgetting_method': eval_nlvr2_forgetting
 }
 
 task_configs = {

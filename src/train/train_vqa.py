@@ -166,3 +166,32 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
 
     model.train()
     return eval_score
+
+def eval_vqa_forgetting(args, model_path, encoder_path, model_config, tokenizer, device):
+
+    vqa_config = task_configs['vqa']
+    data_dir = vqa_config['data_dir']
+    num_labels = vqa_config['num_labels']
+    images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
+
+    encoder_dim = model_config['encoder_dim']
+    visual_mode = model_config['visual_mode']
+    classifier_class = model_config['classifier_class']
+    model = classifier_class(encoder=encoder, 
+                             encoder_dim=encoder_dim, 
+                             num_labels=num_labels)
+    batch2inputs_converter = model_config['batch2inputs_converter']
+    model.to(device)
+
+    vqa_val_dataloader = build_vqa_dataloader(args=args,
+                                          data_dir=data_dir,
+                                          images_dataset=images_dataset,
+                                          split='val',
+                                          tokenizer=tokenizer,
+                                          visual_mode=visual_mode)
+
+    # Load model with encoder weights from encoder_path, and classifier weights from model_path
+    model.load_state_dict(torch.load(model_path))
+    model.get_encoder().load_state_dict(torch.load(encoder_path))
+
+    return eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
