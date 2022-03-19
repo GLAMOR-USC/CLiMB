@@ -11,6 +11,7 @@ import shutil
 import pickle as pkl
 import copy
 import yaml
+from collections import defaultdict
 
 sys.path.insert(0, '.')
 
@@ -36,10 +37,11 @@ device = torch.device(
 def forward_transfer_eval(args, results_file):
 
     cl_results = json.load(open(results_file))
-    assert len(task_results) == len(args.ordered_cl_tasks)
+    assert len(cl_results) == len(args.ordered_cl_tasks)
 
+    logger.info("-"*100)
     forward_transfer_dict = {}
-    for task_num, task_results in enumerate(range(len(cl_results))):
+    for task_num, task_results in enumerate(cl_results):
         # Get result for this CL task
         task_key = task_results['task_key']
         assert task_key == args.ordered_cl_tasks[task_num]
@@ -68,7 +70,7 @@ def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
     classifier_class = model_config['classifier_class']
 
     cl_results = json.load(open(results_file))
-    assert len(task_results) == len(args.ordered_cl_tasks)
+    assert len(cl_results) == len(args.ordered_cl_tasks)
     output_dir = os.path.dirname(results_file)
 
     logger.info("-"*100)
@@ -83,20 +85,28 @@ def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
         encoder_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'encoder')
 
+        # Go from all previous tasks from {0, ..., task_num-1}
         for prev_task_num in range(task_num):
 
-            # Go from all previous tasks from {0, ..., task_num-1}
             prev_task_key = args.ordered_cl_tasks[prev_task_num]
+            # Get model path of prev_task_key
             model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(prev_task_num, prev_task_key), 'model')
 
             prev_task_config = task_configs[prev_task_key]
             prev_task_name = prev_task_config['task_name']
+
+            # Get evaluation score on prev_task
             eval_forgetting_method = prev_task_config['eval_forgetting_method']
-            eval_score = eval_forgetting_method(args, model_path, encoder_path, model_config, tokenizer, device)
+            eval_score = eval_forgetting_method(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device)
             logger.info("Evaluation score of {} model on {}, after training on {}: {:.2f}".format(args.encoder_name,
                                                                                                   prev_task_name,
                                                                                                   task_name,
                                                                                                   eval_score))
-            catastrophic_forgetting_dict[task_key][prev_task_key] = eval_score
+            prev_task_results = cl_results[prev_task_num]
+            assert prev_task_results['task_key'] == prev_task_key
+            baseline_score = prev_task_results['best_score']
+            forgetting_perc = 100.0*(eval_score - baseline_score)/baseline_score
+            logger.info("Forgetting on {}, trained on {} = {:.2f}%".format(prev_task_name, task_name, forgetting_perc))
+            catastrophic_forgetting_dict[task_key][prev_task_key] = forgetting_perc
 
     return catastrophic_forgetting_dict

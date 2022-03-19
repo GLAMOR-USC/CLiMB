@@ -80,13 +80,6 @@ def main():
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
-    # Create W&B experiment
-    logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
-    wandb.init(project=args.wandb_project_name,
-        name=experiment_name,
-        entity='tejas1995',
-        reinit=True)
-
     set_seed(args)
 
     # Load the correct Encoder model, based on encoder_name argument
@@ -101,7 +94,16 @@ def main():
         assert task_key in SUPPORTED_VL_TASKS
 
     if args.do_train:
+
+        # Create W&B experiment
+        logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
+        wandb.init(project=args.wandb_project_name,
+            name=experiment_name,
+            entity='tejas1995',
+            reinit=True)
+
         results = []
+        logger.info("-"*100)
         logger.info("Training models on Vision-Language continual learning tasks...")
         for task_num, task_key in enumerate(args.ordered_cl_tasks):
 
@@ -137,6 +139,7 @@ def main():
 
     if args.do_eval:
 
+        logger.info("-"*100)
         logger.info("Evaluating FORWARD TRANSFER of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
         forward_transfer_dict = forward_transfer_eval(args, results_file)
         average_relative_gain = sum(list(forward_transfer_dict.values()))/len(forward_transfer_dict)

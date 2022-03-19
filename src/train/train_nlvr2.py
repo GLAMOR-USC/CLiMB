@@ -147,7 +147,7 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
     model.train()
     return eval_score
 
-def eval_nlvr2_forgetting(args, model_path, encoder_path, model_config, tokenizer, device):
+def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
 
     nlvr_config = task_configs['nlvr2']
     data_dir = nlvr_config['data_dir']
@@ -173,6 +173,13 @@ def eval_nlvr2_forgetting(args, model_path, encoder_path, model_config, tokenize
 
     # Load model with encoder weights from encoder_path, and classifier weights from model_path
     model.load_state_dict(torch.load(model_path))
-    model.get_encoder().load_state_dict(torch.load(encoder_path))
 
-    return eval_nlvr2(args, model, vqa_val_dataloader, device, batch2inputs_converter)
+    # Load encoder weights from encoder checkpoint
+    ckpt_encoder_dict = torch.load(encoder_path)
+    model_encoder_dict = model.get_encoder().state_dict()
+
+    for k in ckpt_encoder_dict.keys():
+        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+
+    return eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter)
