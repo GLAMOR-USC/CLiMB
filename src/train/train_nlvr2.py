@@ -23,8 +23,8 @@ from data.visionlanguage_datasets.nlvr2_dataset import build_nlvr2_dataloader
 
 sys.path.insert(0, '.')
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["WANDB_START_METHOD"] = "thread"
-wandb.init(project='nlvr')
+#os.environ["WANDB_START_METHOD"] = "thread"
+#wandb.init(project='nlvr')
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -146,3 +146,40 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
 
     model.train()
     return eval_score
+
+def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
+
+    nlvr_config = task_configs['nlvr2']
+    data_dir = nlvr_config['data_dir']
+    num_labels = nlvr_config['num_labels']
+
+    # Create model
+    batch2inputs_converter = model_config['batch2inputs_converter']
+    encoder_dim = model_config['encoder_dim']
+    visual_mode = model_config['visual_mode']
+    classifier_class = model_config['classifier_class']
+    model = classifier_class(encoder=encoder, 
+                             encoder_dim=encoder_dim, 
+                             num_labels=num_labels,
+                             num_images=2)
+    model.expand_modality_type_embeddings(type_vocab_size=3)
+    model.to(device)
+
+    # Create dataloaders for validation
+    val_dataloader = build_nlvr2_dataloader(args=args,
+                                          data_dir=data_dir,
+                                          split='val',
+                                          visual_mode=visual_mode)
+
+    # Load model with encoder weights from encoder_path, and classifier weights from model_path
+    model.load_state_dict(torch.load(model_path))
+
+    # Load encoder weights from encoder checkpoint
+    ckpt_encoder_dict = torch.load(encoder_path)
+    model_encoder_dict = model.get_encoder().state_dict()
+
+    for k in ckpt_encoder_dict.keys():
+        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+
+    return eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter)
