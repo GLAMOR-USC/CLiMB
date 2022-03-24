@@ -95,6 +95,10 @@ class ViltForImageTextClassification(nn.Module):
         output_logits = self.clf_layer(encoder_output)
         return encoder_output, output_logits
 
+    def get_encoder(self):
+
+        return self.vilt_encoder
+
     def fwd_multi_imgs(self, images, texts, num_images=2):
         flat_images_list = list(itertools.chain(*images))
         encodings = self.vilt_encoder.process_inputs(flat_images_list, texts)
