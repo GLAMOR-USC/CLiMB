@@ -55,7 +55,8 @@ snli_ve_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_snli_ve
+        'train_method': train_snli_ve,
+        'eval_forgetting_method': eval_snli_ve_forgetting
 }
 
 task_configs = {
