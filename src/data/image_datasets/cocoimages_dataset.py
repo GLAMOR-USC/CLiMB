@@ -39,7 +39,8 @@ class MSCOCOImagesDataset(Dataset):
             T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # [-1, 1]
         ])
 
-        self.pil_transform = T.Resize(image_size)
+        #self.pil_transform = T.Resize(image_size)
+        self.pil_transform = T.Resize(size=384, max_size=640)
 
     def get_image_data(self, image_id, feats_type):
 
@@ -58,7 +59,8 @@ class MSCOCOImagesDataset(Dataset):
         image_fn = self.imageid2filename[image_id]
         image = Image.open(image_fn)
         image = image.convert('RGB')
-        image = self.pil_transform(image)
+        if min(list(image.size)) > 384:
+            image = self.pil_transform(image)
         return image
 
     def get_raw_image_tensor(self, image_id):

@@ -12,6 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
+import wandb
 
 sys.path.insert(0, '.')
 
@@ -127,9 +128,13 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
             scheduler.step()
             optimizer.zero_grad()
 
+            if (step + 1) % 100 == 0:
+                wandb.log({'vqa': {'loss': loss.item()}})
+
         # Do evaluation after epoch
         eval_score = eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+        wandb.log({'vqa': {'val_score': eval_score}})
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
             best_score = eval_score
@@ -161,3 +166,42 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
 
     model.train()
     return eval_score
+
+def eval_vqa_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
+
+    vqa_config = task_configs['vqa']
+    data_dir = vqa_config['data_dir']
+    num_labels = vqa_config['num_labels']
+
+    images_source = vqa_config['images_source']
+    mscoco_config = task_configs[images_source]
+    images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
+
+    encoder_dim = model_config['encoder_dim']
+    visual_mode = model_config['visual_mode']
+    classifier_class = model_config['classifier_class']
+    model = classifier_class(encoder=encoder, 
+                             encoder_dim=encoder_dim, 
+                             num_labels=num_labels)
+    batch2inputs_converter = model_config['batch2inputs_converter']
+    model.to(device)
+
+    vqa_val_dataloader = build_vqa_dataloader(args=args,
+                                          data_dir=data_dir,
+                                          images_dataset=images_dataset,
+                                          split='val',
+                                          tokenizer=tokenizer,
+                                          visual_mode=visual_mode)
+
+    # Load model with encoder weights from encoder_path, and classifier weights from model_path
+    model.load_state_dict(torch.load(model_path))
+
+    # Load encoder weights from encoder checkpoint
+    ckpt_encoder_dict = torch.load(encoder_path)
+    model_encoder_dict = model.get_encoder().state_dict()
+
+    for k in ckpt_encoder_dict.keys():
+        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+
+    return eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
