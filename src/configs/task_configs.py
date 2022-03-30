@@ -1,7 +1,8 @@
 from train.train_vqa import train_vqa, eval_vqa_forgetting
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
+from train.train_language import train_language
 
-SUPPORTED_VL_TASKS = ['vqa', 'nlvr2']
+SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'sst2', 'imdb']
 
 mscoco_config = {
     'data_dir': '/data/datasets/MCL/ms-coco'
@@ -38,8 +39,42 @@ nlvr_config = {
         'eval_forgetting_method': eval_nlvr2_forgetting
 }
 
+imdb_config = {
+        'task_name': 'imdb',
+        'data_dir': None,
+        'cache_dir': '/data/datasets/MCL/cached_datasets',
+        'splits': ['train', 'val'],
+        'max_len': 150,
+        'num_labels': 2,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 2e-5,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'train_method': train_language
+}
+
+sst2_config = {
+        'task_name': 'sst2',
+        'data_dir': None,
+        'cache_dir': '/data/datasets/MCL/cached_datasets',
+        'splits': ['train', 'val'],
+        'max_len': 80,
+        'num_labels': 2,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 2e-5,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'train_method': train_language
+}
+
 task_configs = {
     'ms-coco': mscoco_config,
     'vqa': vqa_config,
     'nlvr2': nlvr_config,
+    'imdb': imdb_config,
+    'sst2': sst2_config,
 }

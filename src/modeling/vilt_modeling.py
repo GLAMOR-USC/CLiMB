@@ -143,3 +143,10 @@ def convert_batch_to_model_input_dict(batch):
 
     return {'images': batch['images'],
             'texts': batch['raw_texts']}
+
+def convert_language_batch_to_model_input_dict(texts, mean_image):
+    bs = len(texts)
+    batch_images = [mean_image for _ in range(bs)]
+
+    return {'images': batch_images,
+            'texts': list(texts)}

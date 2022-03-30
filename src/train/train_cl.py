@@ -108,11 +108,12 @@ def main():
         for task_num, task_key in enumerate(args.ordered_cl_tasks):
 
             # Load the correct training method for current CL task, and call the training method
-            task_name = task_configs[task_key]['task_name']
+            task_config = task_configs[task_key]
+            task_name = task_config['task_name']
             logger.info("-"*100)
             logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
-            train_method = task_configs[task_key]['train_method']
-            best_eval_score, best_model = train_method(args, encoder, task_configs, model_config, tokenizer, device)
+            train_method = task_config['train_method']
+            best_eval_score, best_model = train_method(args, encoder, task_config, model_config, tokenizer, device)
 
             logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 

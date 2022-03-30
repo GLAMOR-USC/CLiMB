@@ -5,7 +5,7 @@ import os
 import numpy as np
 import torch
 import transformers
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset
 
 from data.language_datasets.text_processors import *
 
@@ -74,51 +74,55 @@ def convert_data_to_features(
     return features
 
 
+class LanguageDataset(Dataset):
+    def __init__(self, processor, data_dir, split, task_name, is_fewshot=True):
+        self.task_name = task_name
+        mc_set = set(['cosmosqa', 'hellaswag', 'piqa'])
+        self.is_mc = task_name in mc_set
+
+        if split == 'train':
+            self.data = processor.get_train_examples(data_dir) # type: list
+            if is_fewshot: # subsample
+                n_all = len(self.data)
+                np.random.seed(2022)
+                sel_ids = set(np.random.choice(n_all, int(n_all*0.1), replace=False))
+                self.data = [dt for i, dt in enumerate(self.data) if i in sel_ids]
+        elif split == 'val':
+            self.data = processor.get_dev_examples(data_dir)
+        else:
+            self.data = processor.get_test_examples(data_dir)
+        self.n_examples = len(self.data)
+        print('# Data:', self.n_examples)
+
+    def __len__(self):
+        return self.n_examples
+
+    def __getitem__(self, index):
+        example = self.data[index]
+        if self.task_name == 'sst2': 
+            text = example['sentence']
+        elif self.task_name == 'imdb': 
+            text = example['text']
+        else: #TODO
+            pdb.set_trace()
+
+        return text, example["label"]
+
+
 def get_data_loader(tokenizer, task_name, split, max_len, batch_size, cache_dir, data_dir=None):
     task_name = task_name.lower()
     processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'cosmosqa': COSMOSQAProcessor, 
         'imdb': IMDBProcessor, 'sst2': GLUEProcessor} 
+    processor = processor_map[task_name]()
 
-    # load if cached
-    path = os.path.join(cache_dir, f'TensorDataset_{task_name}_{split}_{max_len}.pt')
-    if os.path.exists(path):
-        dataset = torch.load(path)
-        logger.info(f"Loaded the cached file from {path}!")
-    else:
-        processor = processor_map[task_name]()
-        if split == 'train':
-            dataset = processor.get_train_examples(data_dir)
-        elif split == 'dev':
-            dataset = processor.get_dev_examples(data_dir)
-        else:
-            dataset = processor.get_test_examples(data_dir)
-
-        mc_set = set(['cosmosqa', 'hellaswag', 'piqa'])
-        if task_name in mc_set:
-            features = convert_mc_data_to_features(dataset, tokenizer, task_name, max_len)
-            # convert features to tensor
-            all_input_ids = torch.LongTensor([[choice['input_ids'] for choice in feature] for feature in features])
-            all_attn_mask = torch.LongTensor([[choice['attention_mask'] for choice in feature] for feature in features])
-            all_token_type = torch.LongTensor([[choice['token_type_ids'] for choice in feature] for feature in features])
-            all_labels = torch.LongTensor([feature[0]['label'] for feature in features])
-        else:
-            features = convert_data_to_features(dataset, tokenizer, task_name, max_len)
-            # convert features to tensor
-            all_input_ids = torch.LongTensor([feature['input_ids'] for feature in features])
-            all_attn_mask = torch.LongTensor([feature['attention_mask'] for feature in features])
-            all_token_type = torch.LongTensor([feature['token_type_ids'] for feature in features])
-            all_labels = torch.LongTensor([feature['label'] for feature in features])
-
-        dataset = TensorDataset(all_input_ids, all_attn_mask, all_token_type, all_labels)
-        torch.save(dataset, path)
-        logger.info(f"Cached the TensorDataset to {path}!")
+    dataset = LanguageDataset(processor, data_dir, split, task_name)
 
     # build dataloader
-    if split == "train":
-        sampler = RandomSampler(dataset)
-    else:
-        sampler = SequentialSampler(dataset)
-
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
+    dataloader = DataLoader(
+        dataset, 
+        shuffle=(split=='train'), 
+        batch_size=batch_size,
+        num_workers=4,
+    )
 
     return dataloader
