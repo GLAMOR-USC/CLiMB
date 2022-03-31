@@ -112,7 +112,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             scheduler.step()
             optimizer.zero_grad()
 
-            if step % 100 == 0:
+            if (step + 1) % 100 == 0:
                 wandb.log({'nlvr': {'loss': loss.item()}})
 
         # Do evaluation after epoch
@@ -126,7 +126,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
-    return best_score, best_model
+    return best_score, best_model, train_dataloader.dataset
 
 def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
 

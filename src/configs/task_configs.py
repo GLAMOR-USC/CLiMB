@@ -1,6 +1,9 @@
 from train.train_vqa import train_vqa, eval_vqa_forgetting
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
 
+from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
+from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
+
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2']
 
 mscoco_config = {
@@ -20,7 +23,8 @@ vqa_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_vqa,
-        'eval_forgetting_method': eval_vqa_forgetting
+        'eval_forgetting_method': eval_vqa_forgetting,
+        'batch_collate_fn': vqa_batch_collate
 }
 
 nlvr_config = {
@@ -35,7 +39,8 @@ nlvr_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_nlvr2,
-        'eval_forgetting_method': eval_nlvr2_forgetting
+        'eval_forgetting_method': eval_nlvr2_forgetting,
+        'batch_collate_fn': nlvr2_batch_collate
 }
 
 task_configs = {
