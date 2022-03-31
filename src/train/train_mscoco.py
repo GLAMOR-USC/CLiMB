@@ -22,6 +22,9 @@ import matplotlib.pyplot as plt
 import pdb
 from tqdm import tqdm
 import pickle as pkl
+import sklearn.metrics
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -38,7 +41,7 @@ device = torch.device(
 #device = torch.device("cpu")
 
 
-def plots(dataname, val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprecision, train_avgprecision):
+def plots(dataname, val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprecision, train_avgprecision, percent):
 
     plt.figure(figsize = (20, 4))
     plt.subplot(1, 4, 1)
@@ -64,8 +67,8 @@ def plots(dataname, val_losses, train_losses, val_recall, train_recall, val_f1me
     plt.grid('on')
     plt.xlabel('epoch')
     plt.legend(['validation', 'training'], loc='upper right')
-    plt.savefig( dataname + '_plots.png')
-    plt.show()
+    #plt.savefig( dataname + '_plots.png')
+    #plt.show()
 
     plt.subplot(1, 4, 4)
     plt.plot(val_avgprecision, 'bo-', label = 'val-avgprecision')
@@ -74,7 +77,7 @@ def plots(dataname, val_losses, train_losses, val_recall, train_recall, val_f1me
     plt.grid('on')
     plt.xlabel('epoch')
     plt.legend(['validation', 'training'], loc='upper right')
-    plt.savefig( dataname + '_plots.png')
+    plt.savefig( dataname + '_' + str(percent) + '_plots.png')
     plt.show()
     
 def save_image_detection(model, mscoco_detection_val_dataloader, device ):
@@ -94,8 +97,9 @@ def Recall(y_true, y_pred):
       for i in range(y_true.shape[0]):
           if sum(y_pred[i]) == 0:
               continue
-          temp+= sum(np.logical_and(y_true[i], y_pred[i]))/ sum(y_pred[i])
-      return temp/ y_true.shape[0]
+          #temp+= sum(np.logical_and(y_true[i], y_pred[i]))/ sum(y_pred[i])
+          temp+= np.nan_to_num(sum(np.logical_and(y_true[i], y_pred[i]))/ sum(y_true[i]))
+      return np.nan_to_num(temp/ y_true.shape[0])
 
 
 def F1Measure(y_true, y_pred):
@@ -117,9 +121,9 @@ def example_based_precision(y_true, y_pred):
     
     # Total number of pred true labels
     precision_den = np.sum(y_pred, axis = 1)
+    #print(precision_den.shape)
     
     # precision averaged over all training examples
-    
     #avg_precision = np.mean(precision_num/precision_den)
     avg_precision = np.mean(np.nan_to_num(precision_num/precision_den))
     
@@ -166,7 +170,7 @@ def example_based_accuracy(y_true, y_pred):
 
 '''
 
-def train_mscoco(args, encoder, task_configs, model_config, device):
+def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1):
 
     mscoco_config   = task_configs['ms-coco']
     images_dir      = mscoco_config['data_dir']
@@ -180,8 +184,11 @@ def train_mscoco(args, encoder, task_configs, model_config, device):
                                                                                     images_dir, 
                                                                                     annotation_dir, 
                                                                                     split='train', 
-                                                                                    visual_mode=visual_mode)
+                                                                                    visual_mode=visual_mode,
+                                                                                    percent = percent)
 
+    print(len(mscoco_detection_train_dataloader))
+    #exit(0);
     mscoco_detection_val_dataloader = datasets.build_mscoco_detection_dataloader(args, 
                                                                                     images_dir, 
                                                                                     annotation_dir, 
@@ -247,7 +254,7 @@ def train_mscoco(args, encoder, task_configs, model_config, device):
         # Training loop for epoch
         ## Save the plots per epoch
         emr_total, recall_total, f1measure_total,avprecision_total, cumtrainloss, count = 0, 0, 0, 0, 0, 0
-        plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec )
+        plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
         t = tqdm(mscoco_detection_train_dataloader,desc='Training epoch {}'.format(epoch))
         for step, batch in enumerate(t):
             
@@ -287,9 +294,12 @@ def train_mscoco(args, encoder, task_configs, model_config, device):
             #print(y_true.shape, y_pred.shape)
             y_pred = np.where(y_pred >= 0.5, 1.0, 0.0)
             emr_total           += emr(y_true, y_pred)
-            recall_total        += Recall(y_true, y_pred)
-            f1measure_total     += F1Measure(y_true, y_pred)
-            avprecision_total   += example_based_precision(y_true, y_pred)
+            #recall_total        += sklearn.metrics.recall_score(y_true, y_pred, average='samples') #Recall(y_true, y_pred)
+            recall_total        += Recall(y_true, y_pred) #
+            #f1measure_total     += sklearn.metrics.f1_score(y_true, y_pred, average='samples') #F1Measure(y_true, y_pred)
+            f1measure_total     += F1Measure(y_true, y_pred) #F1Measure(y_true, y_pred)
+            #avprecision_total   += sklearn.metrics.precision_score(y_true, y_pred, average='samples') #example_based_precision(y_true, y_pred)
+            avprecision_total   += example_based_precision(y_true, y_pred) #example_based_precision(y_true, y_pred)
 
             t.set_postfix(loss          = cumtrainloss/count, 
                             emr         = emr_total/count, 
@@ -302,15 +312,15 @@ def train_mscoco(args, encoder, task_configs, model_config, device):
         train_f1measure.append(f1measure_total/count)
         train_avgprec.append(avprecision_total/count)
         ##Do evaluation step once training is working 
-        val_losses_, val_recall_, val_f1measure_, eval_score  = eval_mscoco(args, model, mscoco_detection_val_dataloader, device)
+        val_losses_, val_recall_, eval_score, val_avgprecision_ = eval_mscoco(args, model, mscoco_detection_val_dataloader, device)
         
         val_losses.append(val_losses_)
         val_recall.append(val_recall_)
-        val_f1measure.append(val_f1measure_)
-        val_avgprec.append(eval_score)
+        val_f1measure.append(eval_score) ## f1_measure
+        val_avgprec.append(val_avgprecision_)
 
         ## Save the plots per epoch
-        plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec )
+        plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
 
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
         if eval_score > best_score:
@@ -319,9 +329,12 @@ def train_mscoco(args, encoder, task_configs, model_config, device):
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
             best_model['loss']  = loss
+            best_model['eval_score'] = eval_score
+            best_model['percent'] = percent
+            print('eval_score: ', best_model['eval_score'], ', percent: ', percent)
 
     ## Now save the best model:
-    path_model = '../results/image_classification.pt'
+    path_model = '../results/'+ str(percent) +'image_classification.pt'
     torch.save({
             'epoch': best_model['epoch'],
             'model_state_dict': best_model['model'].state_dict(),
@@ -330,7 +343,13 @@ def train_mscoco(args, encoder, task_configs, model_config, device):
             }, path_model)
     
     ## Save the plots per epoch
-    plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec )
+    plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
+    print('eval_score: ', best_model['eval_score'], ', percent: ', percent)
+    ##
+    file_mscoco = open('../results/results.txt', 'a')
+    file_mscoco.write('percent: ' + str(percent) + ', eval_score: ' + str(best_model['eval_score']) +  ', percent: ' + str(percent) + '\n')
+    file_mscoco.close()
+
 
 def eval_mscoco(args, model, mscoco_detection_val_dataloader, device):
     #loss
@@ -366,8 +385,11 @@ def eval_mscoco(args, model, mscoco_detection_val_dataloader, device):
         y_pred = np.where(y_pred >= 0.5, 1.0, 0.0)
 
         emr_total_           += emr(y_true, y_pred)
+        #recall_total_        += sklearn.metrics.recall_score(y_true, y_pred, average='samples') #Recall(y_true, y_pred)
         recall_total_        += Recall(y_true, y_pred)
+        #f1measure_total_     += sklearn.metrics.f1_score(y_true, y_pred, average='samples') #F1Measure(y_true, y_pred)
         f1measure_total_     += F1Measure(y_true, y_pred)
+        #avprecision_total_   += sklearn.metrics.precision_score(y_true, y_pred, average='samples') #example_based_precision(y_true, y_pred)
         avprecision_total_   += example_based_precision(y_true, y_pred)
         t.set_postfix(loss          = cumloss_/count_, 
                         emr         = emr_total_/count_, 
@@ -377,29 +399,62 @@ def eval_mscoco(args, model, mscoco_detection_val_dataloader, device):
     val_losses      = cumloss_/count_
     val_recall      = recall_total_/count_
     val_f1measure   = f1measure_total_/count_
-    eval_score      = avprecision_total_/count_ #eval_score/len(vqa_val_dataloader.dataset)*100.0
+    val_avprecision      = avprecision_total_/count_ #eval_score/len(vqa_val_dataloader.dataset)*100.0
 
     model.train()
-    return val_losses, val_recall, val_f1measure, eval_score
+    return val_losses, val_recall, val_f1measure, val_avprecision
 
-'''
-import sklearn.metrics
+def main():
+    ### dataset
+    from data.vision_datasets import cocodetection_dataset as datasets 
+    ### image_dataset -- tejas
+    from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
 
-print('Exact Match Ratio: {0}'.format(sklearn.metrics.accuracy_score(y_true, y_pred, normalize=True, sample_weight=None)))
-#Exact Match Ratio: 0.25
+    from modeling import load_encoder_map
 
-print('Hamming loss: {0}'.format(sklearn.metrics.hamming_loss(y_true, y_pred))) 
-#Hamming loss: 0.4166666666666667
 
-#"samples" applies only to multilabel problems. It does not calculate a per-class measure, instead calculating the metric over the true and predicted classes 
-#for each sample in the evaluation data, and returning their (sample_weight-weighted) average.
+    import torch
+    from torch import nn
+    from torch.optim import AdamW
+    from transformers import get_polynomial_decay_schedule_with_warmup
 
-print('Recall: {0}'.format(sklearn.metrics.precision_score(y_true=y_true, y_pred=y_pred, average='samples'))) 
-#Recall: 0.375
+    from configs.model_configs import model_configs
+    from configs.task_configs import task_configs
+    from utils.seed_utils import set_seed
 
-print('Precision: {0}'.format(sklearn.metrics.recall_score(y_true=y_true, y_pred=y_pred, average='samples')))
-#Precision: 0.5
+    from configs.task_configs import task_configs
+    from train.train_mscoco import train_mscoco
+    from transformers import BertTokenizer
 
-print('F1 Measure: {0}'.format(sklearn.metrics.f1_score(y_true=y_true, y_pred=y_pred, average='samples'))) 
-#F1 Measure: 0.41666666666666663
-'''
+    logger = logging.getLogger(__name__)
+
+    #tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cpu")
+    import copy
+
+
+    class Args:
+        def __init__(self):
+            self.batch_size = 10
+            self.shuffle = True
+            self.num_workers = 2
+            self.encoder_name = 'vilt'
+            self.pretrained_model_name = 'dandelin/vilt-b32-mlm'
+            self.seed = 42
+            self.visual_mode = 'pil-image' #'raw'
+    args = Args()
+
+    set_seed(args)
+    # Load the correct Encoder model, based on encoder_name argument
+    model_config = model_configs[args.encoder_name]
+    load_encoder_method = load_encoder_map[args.encoder_name]
+    encoder = load_encoder_method(args.pretrained_model_name, device)
+
+
+    train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.01)
+    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.05)
+    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.1)
+    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.5)
+    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)

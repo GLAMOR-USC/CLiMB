@@ -18,9 +18,11 @@ import torchvision.datasets as datasets
 # import torchvision.models as models
 import os
 from PIL import Image
+import random
 
 ## image_dataset -- tejas
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -47,9 +49,9 @@ class MSCOCODetection(datasets.coco.CocoDetection):
             self.coco = COCO(annFile)
             self.ids = list(self.coco.imgs.keys())
             
-            self.cat2cat = dict()
+            self.cat2catid = dict()
             for cat in self.coco.cats.keys():
-                self.cat2cat[cat] = len(self.cat2cat)
+                self.cat2catid[cat] = len(self.cat2catid)
             # print(self.cat2cat)
             
             coco = self.coco
@@ -66,7 +68,7 @@ class MSCOCODetection(datasets.coco.CocoDetection):
                 target = coco.loadAnns(ann_ids)
                 output = torch.zeros((80), dtype=torch.float)
                 for obj in target:
-                    output[self.cat2cat[obj['category_id']]] = 1
+                    output[self.cat2catid[obj['category_id']]] = 1
                 target = output
                 '''
                 output = torch.zeros((3, 80), dtype=torch.long)
@@ -126,8 +128,7 @@ def batch_collate(batch, visual_mode):
             'targets': targets}
 
 
-
-def build_mscoco_detection_dataloader(args, images_dir, annotation_dir, split, visual_mode):
+def build_mscoco_detection_dataloader(args, images_dir, annotation_dir, split, visual_mode, percent=1):
     ###Dataloader for MSCOCO detection
     logger.info("Creating MSCOCO-Detection {} dataloader with batch size of {}".format(split, args.batch_size))
 
@@ -137,13 +138,27 @@ def build_mscoco_detection_dataloader(args, images_dir, annotation_dir, split, v
                                     split=split,
                                     images_dataset = mscoco_images_dataset,
                                     visual_mode=visual_mode)
-    shuffle = True if split == 'train' else False
+    #shuffle = True if split == 'train' else False
+    shuffle = False
+    sampler = None
+    
+    if split == 'train':
+        if percent < 1:
+            train_idx = np.array(list(range(0,len(dataset))))
+            random.shuffle(train_idx)
+            train_idx = train_idx[0:int(percent*len(train_idx))]
+            #print(train_idx)
+            sampler = torch.utils.data.SubsetRandomSampler(train_idx)
+        else:
+            shuffle = True
 
     dataloader = torch.utils.data.DataLoader(dataset,
                                             num_workers=args.num_workers,
                                             batch_size=args.batch_size,
                                             shuffle=shuffle,
+                                            sampler=sampler,
                                             collate_fn=lambda x: batch_collate(x, visual_mode))
+    
     return dataloader
 
 if __name__ == '__main__':
