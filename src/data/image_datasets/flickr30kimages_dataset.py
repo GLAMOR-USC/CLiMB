@@ -58,7 +58,8 @@ class Flickr30KImagesDataset(Dataset):
         image_fn = self.imageid2filename[image_id]
         image = Image.open(image_fn)
         image = image.convert('RGB')
-        image = self.pil_transform(image)
+        if min(list(image.size)) > 384:
+            image = self.pil_transform(image)
         return image
 
     def get_raw_image_tensor(self, image_id):
