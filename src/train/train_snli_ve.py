@@ -134,7 +134,7 @@ def train_snli_ve(args, encoder, task_configs, model_config, tokenizer, device):
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
-    return best_score, best_model
+    return best_score, best_model, snli_ve_train_dataloader.dataset
 
 def eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter):
 

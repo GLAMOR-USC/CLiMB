@@ -4,6 +4,7 @@ from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting
 
 from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
 from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
+from data.visionlanguage_datasets.snli_ve_dataset import snlive_batch_collate
 
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve']
 
@@ -61,7 +62,8 @@ snli_ve_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_snli_ve,
-        'eval_forgetting_method': eval_snli_ve_forgetting
+        'eval_forgetting_method': eval_snli_ve_forgetting,
+        'batch_collate_fn': snlive_batch_collate
 }
 
 task_configs = {

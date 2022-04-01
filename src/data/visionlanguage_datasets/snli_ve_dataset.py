@@ -90,7 +90,7 @@ class SnliVEDataset(Dataset):
 
         return hypothesis, input_ids, image, label
 
-def batch_collate(batch, tokenizer, visual_mode):
+def snlive_batch_collate(batch, visual_mode):
 
     #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
     pad_token = 0   # tokenizer.pad_token_id
@@ -149,7 +149,7 @@ def build_snli_ve_dataloader(args, data_dir, images_dataset, split, tokenizer, v
         num_workers=args.num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=lambda x: batch_collate(x, tokenizer, visual_mode))
+        collate_fn=lambda x: snlive_batch_collate(x, visual_mode))
 
     return dataloader
 
