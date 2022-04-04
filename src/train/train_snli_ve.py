@@ -31,7 +31,7 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def train_snli_ve(args, encoder, task_configs, model_config, tokenizer, device):
+def train_snli_ve(args, model, task_configs, model_config, tokenizer, device):
 
     snli_ve_config = task_configs['snli-ve']
     data_dir = snli_ve_config['data_dir']
@@ -43,12 +43,7 @@ def train_snli_ve(args, encoder, task_configs, model_config, tokenizer, device):
     images_dataset = Flickr30KImagesDataset(flickr30k_config['data_dir'])
 
     # Create model
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels)
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
 
@@ -110,7 +105,7 @@ def train_snli_ve(args, encoder, task_configs, model_config, tokenizer, device):
             labels = batch['labels'].to(device)
 
             #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-            output = model(**inputs)
+            output = model(task_key='snli-ve', **inputs)
             logits = output[1]
             # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
             loss = loss_criterion(logits, labels)
@@ -147,7 +142,7 @@ def eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_conve
 
         #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
         with torch.no_grad():
-            output = model(**inputs)
+            output = model(task_key='snli-ve', **inputs)
         logits = output[1]
 
         batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
@@ -158,7 +153,7 @@ def eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_conve
     model.train()
     return eval_acc
 
-def eval_snli_ve_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
+def eval_snli_ve_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
 
     snli_ve_config = task_configs['snli-ve']
     data_dir = snli_ve_config['data_dir']
@@ -170,12 +165,7 @@ def eval_snli_ve_forgetting(args, encoder, model_path, encoder_path, task_config
     images_dataset = Flickr30KImagesDataset(flickr30k_config['data_dir'])
 
     # Create model
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels)
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
 
@@ -190,11 +180,11 @@ def eval_snli_ve_forgetting(args, encoder, model_path, encoder_path, task_config
     model.load_state_dict(torch.load(model_path))
 
     # Load encoder weights from encoder checkpoint
-    ckpt_encoder_dict = torch.load(encoder_path)
-    model_encoder_dict = model.get_encoder().state_dict()
+    #ckpt_encoder_dict = torch.load(encoder_path)
+    #model_encoder_dict = model.get_encoder().state_dict()
 
-    for k in ckpt_encoder_dict.keys():
-        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
-            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+    #for k in ckpt_encoder_dict.keys():
+    #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+    #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
     return eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter)

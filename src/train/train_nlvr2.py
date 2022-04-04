@@ -32,7 +32,7 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
+def train_nlvr2(args, model, task_configs, model_config, tokenizer, device):
 
     nlvr_config = task_configs['nlvr2']
     data_dir = nlvr_config['data_dir']
@@ -40,14 +40,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
 
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels,
-                             num_images=2)
-    model.expand_modality_type_embeddings(type_vocab_size=3)
     model.to(device)
 
     # Create dataloaders for training and validation
@@ -103,7 +96,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             target = batch['labels'].to(device)
             inputs = batch2inputs_converter(batch)
 
-            output = model.fwd_multi_imgs(**inputs)
+            output = model(task_key='nlvr2', **inputs)
             logits = output[1]
             loss = loss_criterion(logits, target)
 
@@ -135,7 +128,7 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
     for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on NLVR2 val set')):
         inputs = batch2inputs_converter(batch)
         with torch.no_grad():
-            output = model.fwd_multi_imgs(**inputs)
+            output = model(task_key='nlvr2', **inputs)
             logits = output[1]
 
         batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
@@ -147,7 +140,7 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
     model.train()
     return eval_score
 
-def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
+def eval_nlvr2_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
 
     nlvr_config = task_configs['nlvr2']
     data_dir = nlvr_config['data_dir']
@@ -155,14 +148,7 @@ def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs,
 
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels,
-                             num_images=2)
-    model.expand_modality_type_embeddings(type_vocab_size=3)
     model.to(device)
 
     # Create dataloaders for validation
@@ -175,11 +161,11 @@ def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs,
     model.load_state_dict(torch.load(model_path))
 
     # Load encoder weights from encoder checkpoint
-    ckpt_encoder_dict = torch.load(encoder_path)
-    model_encoder_dict = model.get_encoder().state_dict()
+    #ckpt_encoder_dict = torch.load(encoder_path)
+    #model_encoder_dict = model.get_encoder().state_dict()
 
-    for k in ckpt_encoder_dict.keys():
-        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
-            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+    #for k in ckpt_encoder_dict.keys():
+    #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+    #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
     return eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter)

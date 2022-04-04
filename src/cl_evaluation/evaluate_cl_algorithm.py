@@ -22,8 +22,6 @@ import wandb
 
 from transformers import BertTokenizer
 
-from modeling import load_encoder_map
-
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from utils.seed_utils import set_seed
@@ -63,7 +61,7 @@ def forward_transfer_eval(args, results_file):
     return forward_transfer_dict
 
 
-def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device):
+def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
 
     model_config = model_configs[args.encoder_name]
     batch2inputs_converter = model_config['batch2inputs_converter']
@@ -83,7 +81,6 @@ def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
         logger.info("Evaluating {} encoder after training on {}, on previously-seen tasks {}".format(args.encoder_name,
                                                                                                      task_name,
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
-        encoder_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'encoder')
 
         # Go from all previous tasks from {0, ..., task_num-1}
         for prev_task_num in range(task_num):
@@ -97,7 +94,7 @@ def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
 
             # Get evaluation score on prev_task
             eval_forgetting_method = prev_task_config['eval_forgetting_method']
-            eval_score = eval_forgetting_method(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device)
+            eval_score = eval_forgetting_method(args, model, model_path, task_configs, model_config, tokenizer, device)
             logger.info("Evaluation score of {} model on {}, after training on {}: {:.2f}".format(args.encoder_name,
                                                                                                   prev_task_name,
                                                                                                   task_name,

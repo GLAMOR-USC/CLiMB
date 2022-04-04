@@ -22,7 +22,7 @@ import wandb
 
 from transformers import BertTokenizer
 
-from modeling import load_encoder_map
+from modeling import load_encoder_map, continual_learner_map
 
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
 from configs.model_configs import model_configs
@@ -123,12 +123,6 @@ def main():
 
     set_seed(args)
 
-    # Load the correct Encoder model, based on encoder_name argument
-    model_config = model_configs[args.encoder_name]
-    load_encoder_method = load_encoder_map[args.encoder_name]
-    encoder = load_encoder_method(args.pretrained_model_name, device)
-    args.visual_mode = model_config['visual_mode']
-
     # Ensure CL algorithm arguments are properly specified
     if args.cl_algorithm == 'singletask_ft':
         assert len(args.ordered_cl_tasks) == 1
@@ -140,6 +134,15 @@ def main():
     # Ensure all the tasks for continual learning are supported VL tasks
     for task_key in args.ordered_cl_tasks:
         assert task_key in SUPPORTED_VL_TASKS
+
+    # Load the correct Encoder model, based on encoder_name argument
+    model_config = model_configs[args.encoder_name]
+    load_encoder_method = load_encoder_map[args.encoder_name]
+    encoder = load_encoder_method(args.pretrained_model_name, device)
+    continual_learner_class = continual_learner_map[args.encoder_name]
+    model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
+    args.visual_mode = model_config['visual_mode']
+    #TODO: fix how the model is loaded everywhere
 
     if args.do_train:
 
@@ -165,7 +168,7 @@ def main():
             logger.info("-"*100)
             logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
             train_method = task_configs[task_key]['train_method']
-            best_eval_score, best_model, task_train_dataset = train_method(args, encoder, task_configs, model_config, tokenizer, device)
+            best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device)
 
             logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
@@ -209,7 +212,7 @@ def main():
         logger.info("-"*100)
 
         logger.info("Evaluating CATASTROPHIC FORGETTING of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
-        catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
+        catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, tokenizer, device)
         # TODO: Aggregate catastrophic forgetting results
         logger.info("-"*100)
 

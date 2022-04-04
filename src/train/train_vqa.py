@@ -38,7 +38,7 @@ def compute_score_with_logits(logits, labels, device):
     scores = (one_hots * labels)
     return scores
 
-def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
+def train_vqa(args, model, task_configs, model_config, tokenizer, device):
 
     vqa_config = task_configs['vqa']
     data_dir = vqa_config['data_dir']
@@ -50,12 +50,7 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
     images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
 
     # Create model
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels)
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
 
@@ -117,7 +112,7 @@ def train_vqa(args, encoder, task_configs, model_config, tokenizer, device):
             target = batch['target_scores'].to(device)
 
             #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-            output = model(**inputs)
+            output = model(task_key='vqa', **inputs)
             logits = output[1]
             # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
             loss = loss_criterion(logits, target) * target.shape[1]
@@ -154,7 +149,7 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
 
         #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
         with torch.no_grad():
-            output = model(**inputs)
+            output = model(task_key='vqa', **inputs)
         logits = output[1]
 
         answer_scores = compute_score_with_logits(logits, target, device)
@@ -167,7 +162,7 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
     model.train()
     return eval_score
 
-def eval_vqa_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
+def eval_vqa_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
 
     vqa_config = task_configs['vqa']
     data_dir = vqa_config['data_dir']
@@ -177,12 +172,7 @@ def eval_vqa_forgetting(args, encoder, model_path, encoder_path, task_configs, m
     mscoco_config = task_configs[images_source]
     images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
 
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels)
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
 
@@ -197,11 +187,11 @@ def eval_vqa_forgetting(args, encoder, model_path, encoder_path, task_configs, m
     model.load_state_dict(torch.load(model_path))
 
     # Load encoder weights from encoder checkpoint
-    ckpt_encoder_dict = torch.load(encoder_path)
-    model_encoder_dict = model.get_encoder().state_dict()
+    #ckpt_encoder_dict = torch.load(encoder_path)
+    #model_encoder_dict = model.get_encoder().state_dict()
 
-    for k in ckpt_encoder_dict.keys():
-        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
-            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+    #for k in ckpt_encoder_dict.keys():
+    #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+    #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
     return eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
