@@ -46,11 +46,14 @@ class ViltEncoderWrapper(nn.Module):
         self.vilt = vilt
         self.device = device
         self.processor.tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-        self.processor.feature_extractor.size = 128 # downsample the image to 128 X 128
+        self.max_text_length = self.vilt.config.max_position_embeddings
 
+    def reset_processor(self, max_text_length, img_size):
+        self.max_text_length = max_text_length
+        self.processor.feature_extractor.size = img_size
 
     def process_inputs(self, images, texts):
-        encodings = self.processor(images=images, text=texts, max_length=160,
+        encodings = self.processor(images=images, text=texts, max_length=self.max_text_length,
             padding=True, truncation=True, return_tensors='pt').to(self.device)
 
         #debug(self.processor, encodings)
@@ -89,6 +92,22 @@ class ViltForImageTextClassification(nn.Module):
         self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[0, :] = emb_data[0, :]
         self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[1, :] = emb_data[1, :]
         self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[2, :] = emb_data[1, :]
+
+    def reallocate_text_image(self, pretrained_pos_emb, max_len):
+        vilt_config = self.vilt_encoder.vilt.config
+        assert max_len % vilt_config.max_position_embeddings == 0
+
+        # copy the pretrained positional embeddings to support texts with longer max_len 
+        extended_pos_emb = torch.cat([pretrained_pos_emb \
+            for _ in range(0, max_len, vilt_config.max_position_embeddings)], 0)
+        # extend & re-init Embedding
+        self.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings = \
+            nn.Embedding(max_len, vilt_config.hidden_size).from_pretrained(extended_pos_emb, freeze=False)
+
+        # extend self.position_ids
+        # https://github.com/huggingface/transformers/blob/main/src/transformers/models/vilt/modeling_vilt.py#L274
+        self.vilt_encoder.vilt.embeddings.text_embeddings.\
+            register_buffer("position_ids", torch.arange(max_len).expand((1, -1)))
 
 
     def forward(self, images, texts):

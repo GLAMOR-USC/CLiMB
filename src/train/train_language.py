@@ -51,6 +51,7 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
                              num_labels=num_labels,
                              num_images=1)
 
+    '''
     # load the ckpt of upstream tasks
     path = '/data/experiments/MCL/old_checkpoints/vilt-singletask_ft-task0_nlvr2/checkpoints/task0_nlvr2/model'
     if 'nlvr2' in path:
@@ -60,20 +61,12 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     for k in ckpt_dict.keys():
         if 'clf_layer' not in k:
             model_dict[k] = ckpt_dict[k].clone()
-    #print(model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight)
     model.load_state_dict(model_dict)
-    #print(model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight)
-    #'''
-    import torch.nn as nn
-    max_slen = 160
+    '''
+    model.vilt_encoder.reset_processor(max_len, 128)
     pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
-    #rand_pos_emb = nn.Embedding(40, 768).weight
-    pos_emb = torch.cat((pt_pos_emb, pt_pos_emb, pt_pos_emb, pt_pos_emb), 0)
-    # re-init. position_embeddings to support texts with longer seq_len
-    model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings = \
-        nn.Embedding(max_slen, 768).from_pretrained(pos_emb, freeze=False)
-    model.vilt_encoder.vilt.embeddings.text_embeddings.register_buffer("position_ids", torch.arange(max_slen).expand((1, -1)))
-    #'''
+    model.reallocate_text_image(pt_pos_emb, max_len)
+
     model.to(device)
 
     # Create dataloaders for training and validation
@@ -181,7 +174,11 @@ def eval_language(args, encoder, task_config, model_config, tokenizer, device): 
                              num_labels=num_labels,
                              num_images=1)
 
-    path = '/data/experiments/MCL/vilt-sequential_ft-task0_sst2/checkpoints/task0_sst2/model'
+    model.vilt_encoder.reset_processor(max_len, 128)
+    pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
+    model.reallocate_text_image(pt_pos_emb, max_len) # dummy, only to extend Embedding; will be reloaded
+
+    path = '/data/experiments/MCL/vilt-sequential_ft-task0_imdb/checkpoints/task0_imdb/model'
     model.load_state_dict(torch.load(path))
 
     model.to(device)
