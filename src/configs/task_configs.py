@@ -1,6 +1,6 @@
 from train.train_vqa import train_vqa, eval_vqa_forgetting
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
-from train.train_language import train_language
+from train.train_language import train_language, eval_language
 
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'sst2', 'imdb']
 
@@ -44,10 +44,10 @@ imdb_config = {
         'data_dir': None,
         'cache_dir': '/data/datasets/MCL/cached_datasets',
         'splits': ['train', 'val'],
-        'max_len': 150,
+        'max_len': 160,
         'num_labels': 2,
         'model_type': 'classification',
-        'num_epochs': 10,
+        'num_epochs': 7,
         'lr': 2e-5,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
@@ -63,7 +63,7 @@ sst2_config = {
         'max_len': 80,
         'num_labels': 2,
         'model_type': 'classification',
-        'num_epochs': 10,
+        'num_epochs': 7,
         'lr': 2e-5,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,

@@ -3,7 +3,7 @@ export TOKENIZERS_PARALLELISM=false
 
 python -m train.train_cl --encoder_name vilt \
                         --pretrained_model_name dandelin/vilt-b32-mlm \
-                        --ordered_cl_tasks sst2 \
+                        --ordered_cl_tasks imdb \
                         --cl_algorithm sequential_ft \
 			            --do_train \
                         --output_dir /data/experiments/MCL/ \

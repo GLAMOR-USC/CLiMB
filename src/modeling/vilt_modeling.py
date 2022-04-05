@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 from transformers import BertConfig, BertTokenizer, BertModel
 from transformers import ViltProcessor, ViltModel
+from transformers import BertTokenizerFast
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -44,9 +45,12 @@ class ViltEncoderWrapper(nn.Module):
         self.processor = processor
         self.vilt = vilt
         self.device = device
+        self.processor.tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        self.processor.feature_extractor.size = 128 # downsample the image to 128 X 128
+
 
     def process_inputs(self, images, texts):
-        encodings = self.processor(images=images, text=texts, 
+        encodings = self.processor(images=images, text=texts, max_length=160,
             padding=True, truncation=True, return_tensors='pt').to(self.device)
 
         #debug(self.processor, encodings)
@@ -128,6 +132,7 @@ class ViltForImageTextClassification(nn.Module):
 
         output_logits = self.clf_layer(pooled_output)
         return pooled_output, output_logits
+
 
 def load_vilt_encoder(pretrained_vilt_name, device):
 
