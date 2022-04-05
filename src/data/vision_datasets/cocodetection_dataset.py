@@ -128,12 +128,11 @@ def batch_collate(batch, visual_mode):
             'targets': targets}
 
 
-def build_mscoco_detection_dataloader(args, images_dir, annotation_dir, split, visual_mode, percent=1):
+def build_mscoco_detection_dataloader(args, mscoco_images_dataset, annotation_dir, split, visual_mode, percent=1):
     ###Dataloader for MSCOCO detection
     logger.info("Creating MSCOCO-Detection {} dataloader with batch size of {}".format(split, args.batch_size))
 
     #dataset    = root, annFile, transform=None, target_transform=None):
-    mscoco_images_dataset = MSCOCOImagesDataset(images_dir)
     dataset    = MSCOCODetection(annotation_dir=annotation_dir,
                                     split=split,
                                     images_dataset = mscoco_images_dataset,
@@ -179,6 +178,6 @@ if __name__ == '__main__':
     print(mscoco_images_dataset.get_image_data( 1, 'raw').shape)
     print(mscoco_images_dataset.get_image_data( 9, 'raw').shape)
 
-    mscoco_detection_train_dataloader = build_mscoco_detection_dataloader(args, images_dir, annotation_dir, split='train', visual_mode=args.visual_mode)
-    mscoco_detection_val_dataloader = build_mscoco_detection_dataloader(args, images_dir, annotation_dir, split='val', visual_mode=args.visual_mode)
+    mscoco_detection_train_dataloader = build_mscoco_detection_dataloader(args, mscoco_images_dataset, annotation_dir, split='train', visual_mode=args.visual_mode)
+    mscoco_detection_val_dataloader = build_mscoco_detection_dataloader(args, mscoco_images_dataset, annotation_dir, split='val', visual_mode=args.visual_mode)
 

@@ -12,11 +12,14 @@ from torch import nn
 from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
+
 from data.vision_datasets import cocodetection_dataset as datasets 
-### image_dataset -- tejas
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
+from modeling import load_encoder_map
 from configs.model_configs import model_configs
 from utils.seed_utils import set_seed
+
+
 import copy
 import matplotlib.pyplot as plt
 import pdb
@@ -170,30 +173,29 @@ def example_based_accuracy(y_true, y_pred):
 
 '''
 
-def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1):
+def train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 1):
 
-    mscoco_config   = task_configs['ms-coco']
+    mscoco_detection_config   = task_configs['ms-coco_detection']
+    mscoco_config = task_configs['ms-coco']
     images_dir      = mscoco_config['data_dir']
-    annotation_dir  = mscoco_config['annotation_dir']
-    num_labels      = mscoco_config['num_labels']
+    annotation_dir  = mscoco_detection_config['annotation_dir']
+    num_labels      = mscoco_detection_config['num_labels']
     visual_mode     = model_config['visual_mode']
 
     mscoco_images_dataset = MSCOCOImagesDataset(images_dir)
 
     mscoco_detection_train_dataloader = datasets.build_mscoco_detection_dataloader(args, 
-                                                                                    images_dir, 
-                                                                                    annotation_dir, 
-                                                                                    split='train', 
-                                                                                    visual_mode=visual_mode,
-                                                                                    percent = percent)
+                                                                                mscoco_images_dataset, 
+                                                                                annotation_dir, 
+                                                                                split='train', 
+                                                                                visual_mode=visual_mode,
+                                                                                percent = percent)
 
-    print(len(mscoco_detection_train_dataloader))
-    #exit(0);
     mscoco_detection_val_dataloader = datasets.build_mscoco_detection_dataloader(args, 
-                                                                                    images_dir, 
-                                                                                    annotation_dir, 
-                                                                                    split='val', 
-                                                                                    visual_mode=visual_mode)
+                                                                                mscoco_images_dataset, 
+                                                                                annotation_dir, 
+                                                                                split='val', 
+                                                                                visual_mode=visual_mode)
     # Create model
     encoder_dim         = model_config['encoder_dim']
     visual_mode         = model_config['visual_mode']
@@ -206,10 +208,10 @@ def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
 
 
     # Training hyperparameters
-    num_epochs      = mscoco_config['num_epochs']
-    lr              = mscoco_config['lr']
-    adam_epsilon    = mscoco_config['adam_epsilon']
-    weight_decay    = mscoco_config['weight_decay']
+    num_epochs      = mscoco_detection_config['num_epochs']
+    lr              = mscoco_detection_config['lr']
+    adam_epsilon    = mscoco_detection_config['adam_epsilon']
+    weight_decay    = mscoco_detection_config['weight_decay']
 
     # Create optimizer
     loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
@@ -245,17 +247,17 @@ def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
     #num_epochs = 1
     
     
-    print("I am ready to start training by epochs")
     train_losses, train_recall, train_f1measure, train_avgprec = [], [], [], []
     val_losses, val_recall, val_f1measure, val_avgprec = [], [], [], []
 
+    logger.info("Training model on MS-COCO Object Detection, with {}% training data".format(percent*100))
     for epoch in range(num_epochs):
         #val_losses_, val_recall_, val_f1measure_, eval_score  = eval_mscoco(args, model, mscoco_detection_val_dataloader, device)
         # Training loop for epoch
         ## Save the plots per epoch
         emr_total, recall_total, f1measure_total,avprecision_total, cumtrainloss, count = 0, 0, 0, 0, 0, 0
-        plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
-        t = tqdm(mscoco_detection_train_dataloader,desc='Training epoch {}'.format(epoch))
+        #plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
+        t = tqdm(mscoco_detection_train_dataloader,desc='Training epoch {}'.format(epoch+1))
         for step, batch in enumerate(t):
             
             images = batch['images']
@@ -312,7 +314,7 @@ def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
         train_f1measure.append(f1measure_total/count)
         train_avgprec.append(avprecision_total/count)
         ##Do evaluation step once training is working 
-        val_losses_, val_recall_, eval_score, val_avgprecision_ = eval_mscoco(args, model, mscoco_detection_val_dataloader, device)
+        val_losses_, val_recall_, eval_score, val_avgprecision_ = eval_mscoco_detection(args, model, mscoco_detection_val_dataloader, device)
         
         val_losses.append(val_losses_)
         val_recall.append(val_recall_)
@@ -320,7 +322,7 @@ def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
         val_avgprec.append(val_avgprecision_)
 
         ## Save the plots per epoch
-        plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
+        #plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
 
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
         if eval_score > best_score:
@@ -331,7 +333,7 @@ def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
             best_model['loss']  = loss
             best_model['eval_score'] = eval_score
             best_model['percent'] = percent
-            print('eval_score: ', best_model['eval_score'], ', percent: ', percent)
+            #print('eval_score: ', best_model['eval_score'], ', percent: ', percent)
 
     ## Now save the best model:
     path_model = '../results/'+ str(percent) +'image_classification.pt'
@@ -343,15 +345,17 @@ def train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
             }, path_model)
     
     ## Save the plots per epoch
-    plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
-    print('eval_score: ', best_model['eval_score'], ', percent: ', percent)
+    #plots('../results/detection', val_losses, train_losses, val_recall, train_recall, val_f1measure, train_f1measure, val_avgprec, train_avgprec, percent)
+    #print('eval_score: ', best_model['eval_score'], ', percent: ', percent)
+    logger.info("Best validation F1 = {:.2f}, after epoch {}".format(best_model['eval_score'], best_model['epoch']))
+
     ##
-    file_mscoco = open('../results/results.txt', 'a')
-    file_mscoco.write('percent: ' + str(percent) + ', eval_score: ' + str(best_model['eval_score']) +  ', percent: ' + str(percent) + '\n')
-    file_mscoco.close()
+    #file_mscoco = open('../results/results.txt', 'a')
+    #file_mscoco.write('percent: ' + str(percent) + ', eval_score: ' + str(best_model['eval_score']) +  ', percent: ' + str(percent) + '\n')
+    #file_mscoco.close()
 
 
-def eval_mscoco(args, model, mscoco_detection_val_dataloader, device):
+def eval_mscoco_detection(args, model, mscoco_detection_val_dataloader, device):
     #loss
     loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
     
@@ -405,26 +409,6 @@ def eval_mscoco(args, model, mscoco_detection_val_dataloader, device):
     return val_losses, val_recall, val_f1measure, val_avprecision
 
 def main():
-    ### dataset
-    from data.vision_datasets import cocodetection_dataset as datasets 
-    ### image_dataset -- tejas
-    from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
-
-    from modeling import load_encoder_map
-
-
-    import torch
-    from torch import nn
-    from torch.optim import AdamW
-    from transformers import get_polynomial_decay_schedule_with_warmup
-
-    from configs.model_configs import model_configs
-    from configs.task_configs import task_configs
-    from utils.seed_utils import set_seed
-
-    from configs.task_configs import task_configs
-    from train.train_mscoco import train_mscoco
-    from transformers import BertTokenizer
 
     logger = logging.getLogger(__name__)
 
@@ -432,6 +416,7 @@ def main():
     device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
     #device = torch.device("cpu")
+    from configs.task_configs import task_configs
     import copy
 
 
@@ -453,8 +438,11 @@ def main():
     encoder = load_encoder_method(args.pretrained_model_name, device)
 
 
-    train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.01)
-    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.05)
-    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.1)
-    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 0.5)
-    #train_mscoco(args, encoder, task_configs, model_config, device, percent = 1)
+    train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.01)
+    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.05)
+    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.1)
+    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.5)
+    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 1)
+
+if __name__ == '__main__':
+    main()
