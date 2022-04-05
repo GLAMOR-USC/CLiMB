@@ -50,6 +50,19 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels,
                              num_images=1)
+
+    # load the ckpt of upstream tasks
+    path = '/data/experiments/MCL/old_checkpoints/vilt-singletask_ft-task0_nlvr2/checkpoints/task0_nlvr2/model'
+    if 'nlvr2' in path:
+        model.expand_modality_type_embeddings(type_vocab_size=3)
+    ckpt_dict = torch.load(path)
+    model_dict = model.state_dict()
+    for k in ckpt_dict.keys():
+        if 'clf_layer' not in k:
+            model_dict[k] = ckpt_dict[k].clone()
+    #print(model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight)
+    model.load_state_dict(model_dict)
+    #print(model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight)
     #'''
     import torch.nn as nn
     max_slen = 160
