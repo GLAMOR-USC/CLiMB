@@ -59,7 +59,7 @@ class ReplayMemoryBuffer:
             self.memory_idxs = random.sample(train_idxs, self.memory_size)
 
         elif self.sampling_strategy == 'random-balanced':
-            raise NotImplementedError("Label-balanced sampling of replay member is not yet implemented!")
+            raise NotImplementedError("Label-balanced sampling of replay memory is not yet implemented!")
 
         logger.info("Created {} replay memory buffer, with {} samples in the memory".format(self.task_name, len(self.memory_idxs)))
 
@@ -96,6 +96,8 @@ def main():
                         help="Percentage of tasks' training samples saved into memory.")
     parser.add_argument("--memory_sampling_strategy", type=str, choices=['random', 'random-balanced'],
                         help="Strategy for sampling memory buffer samples.")
+    parser.add_argument("--replay_frequency", type=int,
+                        help="Number of training steps after which to do a memory replay step.")
 
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
@@ -130,6 +132,8 @@ def main():
         assert len(args.ordered_cl_tasks) > 1
     if args.cl_algorithm == 'experience_replay':
         assert args.memory_percentage > 0.0
+        assert args.replay_frequency > 0
+
 
     # Ensure all the tasks for continual learning are supported VL tasks
     for task_key in args.ordered_cl_tasks:
@@ -158,6 +162,8 @@ def main():
         results = []
         if args.cl_algorithm == 'experience_replay':
             memory_buffers = {}
+        else:
+            memory_buffers = None
 
         logger.info("-"*100)
         logger.info("Training models on Vision-Language continual learning tasks...")
@@ -168,7 +174,7 @@ def main():
             logger.info("-"*100)
             logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
             train_method = task_configs[task_key]['train_method']
-            best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device)
+            best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, memory_buffers)
 
             logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
