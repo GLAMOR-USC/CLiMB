@@ -233,3 +233,6 @@ def snli_ve_replay_step(model, snli_ve_replay_memory, task_configs, batch2inputs
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
+    wandb.log({'snli-ve': {'loss': loss.item()}})
+
+    return loss.item()

@@ -240,5 +240,6 @@ def vqa_replay_step(model, vqa_replay_memory, task_configs, batch2inputs_convert
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
+    wandb.log({'vqa': {'loss': loss.item()}})
 
     return loss.item()

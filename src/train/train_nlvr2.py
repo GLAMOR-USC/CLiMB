@@ -213,5 +213,6 @@ def nlvr2_replay_step(model, nlvr2_replay_memory, task_configs, batch2inputs_con
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
+    wandb.log({'nlvr': {'loss': loss.item()}})
 
     return loss.item()
