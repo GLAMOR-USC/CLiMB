@@ -77,17 +77,15 @@ def convert_data_to_features(
 class LanguageDataset(Dataset):
     def __init__(self, processor, data_dir, split, task_name, n_shot=None, seed=None):
         self.task_name = task_name
-        mc_set = set(['cosmosqa', 'hellaswag', 'piqa'])
-        self.is_mc = task_name in mc_set
 
         if split == 'train':
             self.data = processor.get_train_examples(data_dir) # type: list
             assert seed is not None
             n_all = len(self.data)
             np.random.seed(seed)
-            if self.is_mc:
+            if task_name in ['commonsenseqa', 'hellaswag', 'piqa']: # multiple-choice
                 self.sel_ids = set(np.random.choice(n_all, n_shot, replace=False))
-            else: # balance dataset
+            else: # sequence classification; balance classes
                 labels = np.array([dt['label'] for dt in self.data])
                 all_pos_ids = np.where(labels==1)[0]
                 all_neg_ids = np.where(labels==0)[0]
@@ -113,15 +111,14 @@ class LanguageDataset(Dataset):
             text = example['sentence']
         elif self.task_name == 'imdb': 
             text = example['text']
-        else: #TODO
-            pdb.set_trace()
-
+        else:
+            text = example['merged_text']
         return text, example["label"]
 
 
-def get_data_loader(tokenizer, task_name, split, max_len, batch_size, n_shot=None, seed=None, data_dir=None):
+def get_data_loader(tokenizer, task_name, split, max_len, batch_size, data_dir=None, n_shot=None, seed=None):
     task_name = task_name.lower()
-    processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'cosmosqa': COSMOSQAProcessor, 
+    processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'commonsenseqa': CommonsenseQAProcessor, 
         'imdb': IMDBProcessor, 'sst2': GLUEProcessor} 
     processor = processor_map[task_name]()
 

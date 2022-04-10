@@ -42,16 +42,18 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     n_shot = args.num_shot
     subsample_seed = args.subsample_seed
 
+    # load the pre-computed mean image
+    image_fn = "coco_mean_image.png"
+    mean_image = Image.open(image_fn)
+
     # Create model
-    from modeling.vilt_modeling import convert_language_batch_to_model_input_dict #TODO
-    batch2inputs_converter = convert_language_batch_to_model_input_dict
+    batch2inputs_converter = model_config['batch2inputs_converter']
     encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
     classifier_class = model_config['classifier_class']
     model = classifier_class(encoder=encoder, 
                              encoder_dim=encoder_dim, 
-                             num_labels=num_labels,
-                             num_images=1)
+                             num_labels=num_labels)
 
     '''
     # load the ckpt of upstream tasks
@@ -65,10 +67,12 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             model_dict[k] = ckpt_dict[k].clone()
     model.load_state_dict(model_dict)
     '''
+
     if max_len > 40:
-        model.vilt_encoder.reset_processor(max_len, 128)
+        img_sz = 128
+        mean_image = mean_image.resize((img_sz, img_sz))
         pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
-        model.reallocate_text_image(pt_pos_emb, max_len)
+        model.vilt_encoder.reallocate_text_image(pt_pos_emb, max_len, img_sz)
 
     model.to(device)
 
@@ -78,6 +82,7 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
         split='train', 
         max_len=max_len, 
         batch_size=args.batch_size, 
+        data_dir=data_dir,
         n_shot=n_shot,
         seed=subsample_seed)
 
@@ -85,7 +90,8 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
         task_name=task_name, 
         split='val', 
         max_len=max_len, 
-        batch_size=args.batch_size*4)
+        batch_size=args.batch_size*4,
+        data_dir=data_dir)
 
     # Training hyperparameters
     num_epochs = task_config['num_epochs']
@@ -114,11 +120,6 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
         power=1,
     )
 
-    # load the pre-computed mean image
-    image_fn = "coco_mean_image.png"
-    mean_image = Image.open(image_fn)
-    if max_len > 40:
-        mean_image = mean_image.resize((128, 128))
 
     best_score = 0
     best_model = {
@@ -135,8 +136,7 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             target = batch[1].to(device)
             inputs = batch2inputs_converter(batch[0], mean_image)
 
-            output = model(**inputs)
-            logits = output[1]
+            logits = model(**inputs)
             loss = loss_criterion(logits, target)
 
             loss.backward()
@@ -144,7 +144,7 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             scheduler.step()
             optimizer.zero_grad()
 
-            if step % 100 == 0:
+            if step % 50 == 0:
                 print('loss:', loss.item())
 
         # Do evaluation after epoch
@@ -186,19 +186,21 @@ def eval_language(args, encoder, task_config, model_config, tokenizer, device): 
     cache_dir = task_config['cache_dir']
 
     # Create model
-    from modeling.vilt_modeling import convert_language_batch_to_model_input_dict #TODO
-    batch2inputs_converter = convert_language_batch_to_model_input_dict
+    batch2inputs_converter = model_config['batch2inputs_converter']
     encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
     classifier_class = model_config['classifier_class']
     model = classifier_class(encoder=encoder, 
                              encoder_dim=encoder_dim, 
-                             num_labels=num_labels,
-                             num_images=1)
+                             num_labels=num_labels)
 
-    model.vilt_encoder.reset_processor(max_len, 128)
-    pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
-    model.reallocate_text_image(pt_pos_emb, max_len) # dummy, only to extend Embedding; will be reloaded
+    # load the pre-computed mean image
+    image_fn = "coco_mean_image.png"
+    mean_image = Image.open(image_fn)
+    if max_len > 40:
+        mean_image = mean_image.resize((128, 128))
+        pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
+        model.vilt_encoder.reallocate_text_image(pt_pos_emb, max_len, 128)
 
     path = '/data/experiments/MCL/vilt-sequential_ft-task0_imdb/checkpoints/task0_imdb/model'
     model.load_state_dict(torch.load(path))
@@ -212,10 +214,6 @@ def eval_language(args, encoder, task_config, model_config, tokenizer, device): 
         batch_size=args.batch_size*2, 
         cache_dir=cache_dir)
 
-    # load the pre-computed mean image
-    image_fn = "coco_mean_image.png"
-    mean_image = Image.open(image_fn)
-    mean_image = mean_image.resize((128, 128))
 
     eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter)
 
@@ -228,8 +226,7 @@ def eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter
         labels = batch[1]
         inputs = batch2inputs_converter(batch[0], mean_image)
         with torch.no_grad():
-            output = model(**inputs)
-            logits = output[1]
+            logits = model(**inputs)
 
         batch_scores = (logits.argmax(-1).cpu() == labels)
         eval_score += batch_scores.sum().item()

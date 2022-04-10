@@ -17,6 +17,7 @@ do
                                 --output_dir /data/experiments/MCL/ \
                                 --wandb_project_name vl-cl \
                                 --batch_size 32 \
+                                --model_catog vilt-l-seq \
                                 --num_shot $n \
                                 --subsample_seed $s
     done

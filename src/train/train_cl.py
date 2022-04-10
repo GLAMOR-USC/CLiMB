@@ -42,6 +42,8 @@ def main():
     ## Required parameters
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
+    parser.add_argument("--model_catog", default='vilt-vl', type=str, choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc'],
+                        help="The catogory for model class.")
     parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
                         help="Name of pretrained model weights to load.")
     parser.add_argument("--ordered_cl_tasks", type=str, required=True,
@@ -90,7 +92,7 @@ def main():
     set_seed(args)
 
     # Load the correct Encoder model, based on encoder_name argument
-    model_config = model_configs[args.encoder_name]
+    model_config = model_configs[args.model_catog]
     load_encoder_method = load_encoder_map[args.encoder_name]
     encoder = load_encoder_method(args.pretrained_model_name, device)
 
@@ -124,6 +126,7 @@ def main():
 
             logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
+            '''
             # Save best model checkpoint, and separately save the models' Encoder object
             logger.info("Saving best model and encoder checkpoint after {} training".format(task_name))
             task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
@@ -133,6 +136,7 @@ def main():
             torch.save(best_task_model.state_dict(), os.path.join(task_output_dir, 'model'))
             torch.save(best_task_model.get_encoder().state_dict(), os.path.join(task_output_dir, 'encoder'))
             logger.info("Saved checkpoint!")
+            '''
 
             # Save CL results so far
             task_results = {

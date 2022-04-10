@@ -2,7 +2,7 @@ from train.train_vqa import train_vqa, eval_vqa_forgetting
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
 from train.train_language import train_language, eval_language
 
-SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'sst2', 'imdb']
+SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'sst2', 'imdb', 'hellaswag', 'piqa', 'commonsenseqa']
 
 mscoco_config = {
     'data_dir': '/data/datasets/MCL/ms-coco'
@@ -60,16 +60,65 @@ sst2_config = {
         'data_dir': None,
         'cache_dir': '/data/datasets/MCL/cached_datasets',
         'splits': ['train', 'val'],
-        'max_len': 80,
+        'max_len': 40,
         'num_labels': 2,
         'model_type': 'classification',
-        'num_epochs': 7,
-        'lr': 2e-5,
+        'num_epochs': 10,
+        'lr': 4e-5,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_language
 }
+
+
+hellaswag_config = {
+        'task_name': 'hellaswag',
+        'data_dir': '/data/datasets/MCL/hellaswag',
+        'splits': ['train', 'val'],
+        'max_len': 120,
+        'num_labels': 4,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 4e-5,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'train_method': train_language
+}
+
+
+commonsenseqa_config = {
+        'task_name': 'commonsenseqa',
+        'data_dir': '/data/datasets/MCL/commonsenseqa',
+        'splits': ['train', 'val'],
+        'max_len': 80,
+        'num_labels': 5,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 4e-5,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'train_method': train_language
+}
+
+
+piqa_config = {
+        'task_name': 'piqa',
+        'data_dir': '/data/datasets/MCL/piqa',
+        'splits': ['train', 'val'],
+        'max_len': 80,
+        'num_labels': 2,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 4e-5,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'train_method': train_language
+}
+
 
 task_configs = {
     'ms-coco': mscoco_config,
@@ -77,4 +126,7 @@ task_configs = {
     'nlvr2': nlvr_config,
     'imdb': imdb_config,
     'sst2': sst2_config,
+    'hellaswag': hellaswag_config,
+    'piqa': piqa_config,
+    'commonsenseqa': commonsenseqa_config
 }
