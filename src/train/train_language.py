@@ -1,4 +1,5 @@
 import argparse
+from collections import defaultdict
 import datetime
 import json
 import logging
@@ -35,10 +36,11 @@ logging.basicConfig(
 
 def train_language(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
-    data_dir = task_config['data_dir']
     num_labels = task_config['num_labels']
+    data_dir = task_config['data_dir']
     max_len = task_config['max_len']
-    cache_dir = task_config['cache_dir']
+    n_shot = args.num_shot
+    subsample_seed = args.subsample_seed
 
     # Create model
     from modeling.vilt_modeling import convert_language_batch_to_model_input_dict #TODO
@@ -63,9 +65,10 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             model_dict[k] = ckpt_dict[k].clone()
     model.load_state_dict(model_dict)
     '''
-    model.vilt_encoder.reset_processor(max_len, 128)
-    pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
-    model.reallocate_text_image(pt_pos_emb, max_len)
+    if max_len > 40:
+        model.vilt_encoder.reset_processor(max_len, 128)
+        pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
+        model.reallocate_text_image(pt_pos_emb, max_len)
 
     model.to(device)
 
@@ -75,14 +78,14 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
         split='train', 
         max_len=max_len, 
         batch_size=args.batch_size, 
-        cache_dir=cache_dir)
+        n_shot=n_shot,
+        seed=subsample_seed)
 
     val_dataloader = get_data_loader(tokenizer, 
         task_name=task_name, 
         split='val', 
         max_len=max_len, 
-        batch_size=args.batch_size*4, 
-        cache_dir=cache_dir)
+        batch_size=args.batch_size*4)
 
     # Training hyperparameters
     num_epochs = task_config['num_epochs']
@@ -114,7 +117,8 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     # load the pre-computed mean image
     image_fn = "coco_mean_image.png"
     mean_image = Image.open(image_fn)
-    mean_image = mean_image.resize((128, 128))
+    if max_len > 40:
+        mean_image = mean_image.resize((128, 128))
 
     best_score = 0
     best_model = {
@@ -153,7 +157,25 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
+    write_results(n_shot, subsample_seed, best_score, task_name, max_len)
     return best_score, best_model
+
+
+def write_results(n_shot, subsample_seed, best_score, task_name, max_len):
+    tree = lambda: defaultdict(tree)
+    all_scores = tree()
+    out_fn = f'{task_name}_results-{max_len}.json'
+    # load previous results
+    if os.path.exists(out_fn):
+        with open(out_fn, "r") as f:
+            rdict = json.load(f)
+        for k, v in rdict.items():
+            all_scores[k] = v
+    # update current results
+    all_scores[f'nshot-{n_shot}'][f'seed-{subsample_seed}'] = best_score
+    with open(out_fn, "w") as outfile:
+        outfile.write(json.dumps(all_scores))
+
 
 
 def eval_language(args, encoder, task_config, model_config, tokenizer, device): #TODO

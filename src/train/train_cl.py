@@ -67,9 +67,16 @@ def main():
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed.")
 
+    # only used by few-shot downstream tasks
+    parser.add_argument("--num_shot", type=int,
+                        help="Number of training data (per class)")
+    parser.add_argument("--subsample_seed", type=int,
+                        help="Random seed for few-shot sampling.")
+
     
     args = parser.parse_args()
     args.ordered_cl_tasks = args.ordered_cl_tasks.split(',')
+    print(args)
 
     # Set up experiment directories
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)

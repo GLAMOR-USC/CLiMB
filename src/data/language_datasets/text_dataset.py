@@ -75,18 +75,28 @@ def convert_data_to_features(
 
 
 class LanguageDataset(Dataset):
-    def __init__(self, processor, data_dir, split, task_name, is_fewshot=True):
+    def __init__(self, processor, data_dir, split, task_name, n_shot=None, seed=None):
         self.task_name = task_name
         mc_set = set(['cosmosqa', 'hellaswag', 'piqa'])
         self.is_mc = task_name in mc_set
 
         if split == 'train':
             self.data = processor.get_train_examples(data_dir) # type: list
-            if is_fewshot: # subsample
-                n_all = len(self.data)
-                np.random.seed(2022)
-                sel_ids = set(np.random.choice(n_all, int(n_all*0.1), replace=False))
-                self.data = [dt for i, dt in enumerate(self.data) if i in sel_ids]
+            assert seed is not None
+            n_all = len(self.data)
+            np.random.seed(seed)
+            if self.is_mc:
+                self.sel_ids = set(np.random.choice(n_all, n_shot, replace=False))
+            else: # balance dataset
+                labels = np.array([dt['label'] for dt in self.data])
+                all_pos_ids = np.where(labels==1)[0]
+                all_neg_ids = np.where(labels==0)[0]
+                pos_sel_ids = set(np.random.choice(all_pos_ids, n_shot, replace=False))
+                neg_sel_ids = set(np.random.choice(all_neg_ids, n_shot, replace=False))
+                self.sel_ids = pos_sel_ids.union(neg_sel_ids)
+                assert labels[np.array(list(self.sel_ids))].mean() == 0.5, "error in class balance"
+            self.data = [dt for i, dt in enumerate(self.data) if i in self.sel_ids]
+
         elif split == 'val':
             self.data = processor.get_dev_examples(data_dir)
         else:
@@ -109,13 +119,13 @@ class LanguageDataset(Dataset):
         return text, example["label"]
 
 
-def get_data_loader(tokenizer, task_name, split, max_len, batch_size, cache_dir, data_dir=None):
+def get_data_loader(tokenizer, task_name, split, max_len, batch_size, n_shot=None, seed=None, data_dir=None):
     task_name = task_name.lower()
     processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'cosmosqa': COSMOSQAProcessor, 
         'imdb': IMDBProcessor, 'sst2': GLUEProcessor} 
     processor = processor_map[task_name]()
 
-    dataset = LanguageDataset(processor, data_dir, split, task_name)
+    dataset = LanguageDataset(processor, data_dir, split, task_name, n_shot, seed)
 
     # build dataloader
     dataloader = DataLoader(
