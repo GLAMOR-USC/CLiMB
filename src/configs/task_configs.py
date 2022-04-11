@@ -1,6 +1,6 @@
 from train.train_vqa import train_vqa, eval_vqa_forgetting, vqa_replay_step
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, nlvr2_replay_step
-from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting
+from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, snli_ve_replay_step
 
 from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
 from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate

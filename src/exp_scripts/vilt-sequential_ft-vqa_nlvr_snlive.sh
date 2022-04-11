@@ -8,4 +8,4 @@ python -m train.train_cl --encoder_name vilt \
 			--do_train \
                         --output_dir /data/experiments/MCL/ \
                         --wandb_project_name vl-cl \
-                        --batch_size 32
+                        --batch_size 64

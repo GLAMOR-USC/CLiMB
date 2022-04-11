@@ -113,7 +113,7 @@ def build_nlvr2_dataloader(args, data_dir, split, visual_mode):
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers = args.num_workers,
-        batch_size = args.batch_size/2,
+        batch_size = int(args.batch_size)/2,
         shuffle = (split=='train'),
         collate_fn = lambda x: nlvr2_batch_collate(x, visual_mode)
         )
