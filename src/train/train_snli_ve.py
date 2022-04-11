@@ -124,9 +124,6 @@ def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, me
             if (step + 1) % 100 == 0:
                 wandb.log({'snli-ve': {'loss': loss.item()}})
 
-            if (step + 1) % 1000 == 0:
-                break
-
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
                     sampled_previous_task = random.choice(previous_tasks)

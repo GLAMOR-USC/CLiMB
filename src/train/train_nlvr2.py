@@ -113,9 +113,6 @@ def train_nlvr2(args, model, task_configs, model_config, tokenizer, device, repl
             if (step + 1) % 100 == 0:
                 wandb.log({'nlvr': {'loss': loss.item()}})
 
-            if (step + 1) % 1000 == 0:
-                break
-
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
                     sampled_previous_task = random.choice(previous_tasks)
