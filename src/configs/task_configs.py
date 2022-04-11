@@ -16,7 +16,7 @@ mscoco_config = {
 
 mscoco_detection_config = {
         'task_name': 'MLIC',
-        'annotation_dir': '/data/datasets/MCL/ms-coco/detections/annotations/',
+        'annotation_dir': 'ms-coco/detections/annotations/',
         'images_source': 'ms-coco',
         'splits': ['train', 'val'],
         'num_labels': 80,
