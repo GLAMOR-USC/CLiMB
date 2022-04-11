@@ -152,7 +152,7 @@ def main():
 
     if args.do_train:
 
-        assert len(os.listdir(output_dir)) == 0         # Ensure I am not overwriting an existing output directory
+        #assert len(os.listdir(output_dir)) == 0         # Ensure I am not overwriting an existing output directory
 
         # Create W&B experiment
         logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
@@ -171,8 +171,15 @@ def main():
         logger.info("Training models on Vision-Language continual learning tasks...")
         for task_num, task_key in enumerate(args.ordered_cl_tasks):
 
-            # Load the correct training method for current CL task, and call the training method
             task_name = task_configs[task_key]['task_name']
+            task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
+            if os.path.isfile(os.path.join(task_output_dir, 'model')):
+                logger.info("Found checkpoint for task {}!".format(task_name))
+                model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
+                logger.info("Loaded model checkpoint from task {}! Moving on to next task...".format(task_name))
+                continue
+
+            # Load the correct training method for current CL task, and call the training method
             logger.info("-"*100)
             logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
             train_method = task_configs[task_key]['train_method']
@@ -182,7 +189,6 @@ def main():
 
             # Save best model checkpoint, and separately save the models' Encoder object
             logger.info("Saving best model and encoder checkpoint after {} training".format(task_name))
-            task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
             if not os.path.isdir(task_output_dir):
                 os.makedirs(task_output_dir)
             best_task_model = best_model['model']
