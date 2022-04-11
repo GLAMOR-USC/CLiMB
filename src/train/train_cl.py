@@ -86,6 +86,8 @@ def main():
                         help="Ordered list of VL task keys for continual learning, seprated by commas.")
     parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft', 'sequential_ft', 'experience_replay'],
                         help="Name of Continual Learning algorithm used.")
+    parser.add_argument("--mcl_data_dir", type=str, required=True, default='/data/datasets/MCL/',
+                        help="Directory where all the MCL data is stored")
     parser.add_argument("--do_train", action='store_true',
                         help="If True, train the model on these tasks")
     parser.add_argument("--do_eval", action='store_true',

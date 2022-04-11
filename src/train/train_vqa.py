@@ -41,13 +41,13 @@ def compute_score_with_logits(logits, labels, device):
 def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
 
     vqa_config = task_configs['vqa']
-    data_dir = vqa_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
     num_labels = vqa_config['num_labels']
 
     # Load COCO Images dataset for image data backbone
     images_source = vqa_config['images_source']
     mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
+    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
 
     # Create model
     visual_mode = model_config['visual_mode']
@@ -131,6 +131,9 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
             if (step + 1) % 100 == 0:
                 wandb.log({'vqa': {'loss': loss.item()}})
 
+            if (step + 1) % 1000 == 0:
+                break
+
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
                     sampled_previous_task = random.choice(previous_tasks)
@@ -177,12 +180,12 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
 def eval_vqa_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
 
     vqa_config = task_configs['vqa']
-    data_dir = vqa_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
     num_labels = vqa_config['num_labels']
 
     images_source = vqa_config['images_source']
     mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(mscoco_config['data_dir'])
+    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
 
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']

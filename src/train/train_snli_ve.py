@@ -34,13 +34,13 @@ logging.basicConfig(
 def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
 
     snli_ve_config = task_configs['snli-ve']
-    data_dir = snli_ve_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
     num_labels = snli_ve_config['num_labels']
 
     # Load Flickr30K Images dataset for image data backbone
     images_source = snli_ve_config['images_source']
     flickr30k_config = task_configs[images_source]
-    images_dataset = Flickr30KImagesDataset(flickr30k_config['data_dir'])
+    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
 
     # Create model
     visual_mode = model_config['visual_mode']
@@ -124,6 +124,9 @@ def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, me
             if (step + 1) % 100 == 0:
                 wandb.log({'snli-ve': {'loss': loss.item()}})
 
+            if (step + 1) % 1000 == 0:
+                break
+
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
                     sampled_previous_task = random.choice(previous_tasks)
@@ -168,13 +171,13 @@ def eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_conve
 def eval_snli_ve_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
 
     snli_ve_config = task_configs['snli-ve']
-    data_dir = snli_ve_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
     num_labels = snli_ve_config['num_labels']
 
     # Load Flickr30K Images dataset for image data backbone
     images_source = snli_ve_config['images_source']
     flickr30k_config = task_configs[images_source]
-    images_dataset = Flickr30KImagesDataset(flickr30k_config['data_dir'])
+    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
 
     # Create model
     visual_mode = model_config['visual_mode']

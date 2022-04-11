@@ -9,22 +9,22 @@ from data.visionlanguage_datasets.snli_ve_dataset import snlive_batch_collate
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve']
 
 mscoco_config = {
-    'data_dir': '/data/datasets/MCL/ms-coco'
+    'data_dir': 'ms-coco/',
 }
 
 flickr_config = {
-    'data_dir': '/data/datasets/MCL/flickr30k'
+    'data_dir': 'flickr30k/',
 }
 
 vqa_config = {
         'task_name': 'VQAv2',
-        'data_dir': '/data/datasets/MCL/vqav2',
+        'data_dir': 'vqav2/',
         'images_source': 'ms-coco',
         'splits': ['train', 'val'],
         'num_labels': 3129,
         'num_images': 1,
         'model_type': 'classification',
-        'num_epochs': 10,
+        'num_epochs': 1,
         'lr': 1e-4,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
@@ -37,12 +37,12 @@ vqa_config = {
 
 nlvr_config = {
         'task_name': 'NLVRv2',
-        'data_dir': '/data/datasets/MCL/nlvr2',
+        'data_dir': 'nlvr2/',
         'splits': ['train', 'val'],
         'num_labels': 2,
         'num_images': 2,
         'model_type': 'classification',
-        'num_epochs': 10,
+        'num_epochs': 1,
         'lr': 1e-4,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
@@ -55,13 +55,13 @@ nlvr_config = {
 
 snli_ve_config = {
         'task_name': 'SNLI-VE',
-        'data_dir': '/data/datasets/MCL/snli-ve',
+        'data_dir': 'snli-ve/',
         'images_source': 'flickr30k',
         'splits': ['train', 'dev', 'test'],
         'num_labels': 3,
         'num_images': 1,
         'model_type': 'classification',
-        'num_epochs': 5,
+        'num_epochs': 1,
         'lr': 5e-5,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,

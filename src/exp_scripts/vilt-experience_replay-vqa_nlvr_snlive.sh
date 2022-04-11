@@ -8,8 +8,9 @@ python -m train.train_cl --encoder_name vilt \
 			--memory_percentage 0.01 \
 			--memory_sampling_strategy random \
 			--replay_frequency 100 \
+                        --mcl_data_dir /data/datasets/MCL/ \
 			--do_train \
 			--do_eval \
                         --output_dir /data/experiments/MCL/ \
                         --wandb_project_name vl-cl \
-                        --batch_size 32
+                        --batch_size 64

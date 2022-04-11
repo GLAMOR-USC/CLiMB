@@ -35,7 +35,7 @@ logging.basicConfig(
 def train_nlvr2(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
 
     nlvr_config = task_configs['nlvr2']
-    data_dir = nlvr_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, nlvr_config['data_dir'])
     num_labels = nlvr_config['num_labels']
 
     # Create model
@@ -113,6 +113,9 @@ def train_nlvr2(args, model, task_configs, model_config, tokenizer, device, repl
             if (step + 1) % 100 == 0:
                 wandb.log({'nlvr': {'loss': loss.item()}})
 
+            if (step + 1) % 1000 == 0:
+                break
+
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
                     sampled_previous_task = random.choice(previous_tasks)
@@ -155,7 +158,7 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
 def eval_nlvr2_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
 
     nlvr_config = task_configs['nlvr2']
-    data_dir = nlvr_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, nlvr_config['data_dir'])
     num_labels = nlvr_config['num_labels']
 
     # Create model
