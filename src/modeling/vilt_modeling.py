@@ -197,6 +197,7 @@ class ViltForMultipleChoice(nn.Module):
         encoder - instance of ViltEncoderWrapper class
         encoder_dim - output dimension of vilt encoder
         num_labels - number of labels for classification task
+        # https://github.com/huggingface/transformers/blob/v4.17.0/src/transformers/models/bert/modeling_bert.py#L1603
         '''
 
         super().__init__()
@@ -269,12 +270,17 @@ def convert_batch_to_model_input_dict(batch):
     return {'images': batch['images'],
             'texts': batch['raw_texts']}
 
-def convert_seq_batch_to_model_input_dict(texts, mean_image):
+def convert_seq_batch_to_model_input_dict(batch, mean_image):
 
     return {'images': [mean_image],
-            'texts': list(texts)}
+            'texts': list(batch[0])}
 
-def convert_mc_batch_to_model_input_dict(texts, mean_image):
+def convert_mc_batch_to_model_input_dict(batch, mean_image):
+    texts_a, texts_b = batch[0], batch[1]
+    bs = len(texts_a)
+
+    texts_b = list(itertools.chain(*texts_b)) #texts_b (n_choice, bs) -> (n_choice*bs,)
+    text_pairs = [[texts_a[i%bs], tb] for i, tb in enumerate(texts_b)] # extend text_a & pair w/ text_b
 
     return {'images': [mean_image],
-            'texts': list(itertools.chain(*texts))}
+            'texts': text_pairs}

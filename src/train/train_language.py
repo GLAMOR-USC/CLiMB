@@ -133,8 +133,8 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     for epoch in range(num_epochs):
         # Training loop for epoch
         for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch+1))):
-            target = batch[1].to(device)
-            inputs = batch2inputs_converter(batch[0], mean_image)
+            target = batch[-1].to(device)
+            inputs = batch2inputs_converter(batch, mean_image)
 
             logits = model(**inputs)
             loss = loss_criterion(logits, target)
@@ -223,8 +223,8 @@ def eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter
     model.eval()
     eval_score = 0
     for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on val set')):
-        labels = batch[1]
-        inputs = batch2inputs_converter(batch[0], mean_image)
+        labels = batch[-1]
+        inputs = batch2inputs_converter(batch, mean_image)
         with torch.no_grad():
             logits = model(**inputs)
 

@@ -108,12 +108,11 @@ class LanguageDataset(Dataset):
     def __getitem__(self, index):
         example = self.data[index]
         if self.task_name == 'sst2': 
-            text = example['sentence']
+            return example['sentence'], example["label"]
         elif self.task_name == 'imdb': 
-            text = example['text']
+            return example['text'], example["label"]
         else:
-            text = example['merged_text']
-        return text, example["label"]
+            return example['text_a'], example['text_b'], example["label"]
 
 
 def get_data_loader(tokenizer, task_name, split, max_len, batch_size, data_dir=None, n_shot=None, seed=None):
