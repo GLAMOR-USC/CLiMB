@@ -2,10 +2,26 @@ from train.train_vqa import train_vqa, eval_vqa_forgetting
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
 from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting
 
+from train.train_mscoco_detection import train_mscoco_detection
+
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve']
 
 mscoco_config = {
-    'data_dir': '/data/datasets/MCL/ms-coco'
+        'data_dir': '/data/datasets/MCL/ms-coco',
+}
+
+mscoco_detection_config = {
+        'task_name': 'MLIC',
+        'annotation_dir': '/data/datasets/MCL/ms-coco/detections/annotations/',
+        'images_source': 'ms-coco',
+        'splits': ['train', 'val'],
+        'num_labels': 80,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 1e-4,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'train_method': train_mscoco_detection
 }
 
 flickr_config = {
@@ -64,5 +80,6 @@ task_configs = {
     'flickr30k': flickr_config,
     'vqa': vqa_config,
     'nlvr2': nlvr_config,
+    'ms-coco_detection': mscoco_detection_config,
     'snli-ve': snli_ve_config
 }
