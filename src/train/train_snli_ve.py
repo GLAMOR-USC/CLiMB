@@ -31,6 +31,25 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
+def get_snli_ve_train_dataset(args, task_configs, model_config, tokenizer):
+
+    snli_ve_config = task_configs['snli-ve']
+    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
+
+    # Load Flickr30K Images dataset for image data backbone
+    images_source = snli_ve_config['images_source']
+    flickr30k_config = task_configs[images_source]
+    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
+
+    visual_mode = model_config['visual_mode']
+    snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
+                                                        data_dir=data_dir,
+                                                        images_dataset=images_dataset,
+                                                        split='train',
+                                                        tokenizer=tokenizer,
+                                                        visual_mode=visual_mode)
+    return snli_ve_train_dataloader.dataset
+
 def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
 
     snli_ve_config = task_configs['snli-ve']

@@ -32,6 +32,18 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
+def get_nlvr2_train_dataset(args, task_configs, model_config, tokenizer):
+
+    nlvr_config = task_configs['nlvr2']
+    data_dir = os.path.join(args.mcl_data_dir, nlvr_config['data_dir'])
+    visual_mode = model_config['visual_mode']
+    # Create dataloaders for training and validation
+    train_dataloader = build_nlvr2_dataloader(args=args,
+                                            data_dir=data_dir,
+                                            split='train',
+                                            visual_mode=visual_mode)
+    return train_dataloader.dataset
+
 def train_nlvr2(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
 
     nlvr_config = task_configs['nlvr2']

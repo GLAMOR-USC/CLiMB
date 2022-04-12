@@ -38,6 +38,27 @@ def compute_score_with_logits(logits, labels, device):
     scores = (one_hots * labels)
     return scores
 
+def get_vqa_train_dataset(args, task_configs, model_config, tokenizer):
+
+    vqa_config = task_configs['vqa']
+    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
+
+    # Load COCO Images dataset for image data backbone
+    images_source = vqa_config['images_source']
+    mscoco_config = task_configs[images_source]
+    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
+
+    visual_mode = model_config['visual_mode']
+
+    # Create dataloaders for training and validation
+    vqa_train_dataloader = build_vqa_dataloader(args=args,
+                                                data_dir=data_dir,
+                                                images_dataset=images_dataset,
+                                                split='train',
+                                                tokenizer=tokenizer,
+                                                visual_mode=visual_mode)
+    return vqa_train_dataloader.dataset
+
 def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
 
     vqa_config = task_configs['vqa']

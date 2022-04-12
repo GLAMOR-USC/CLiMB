@@ -1,6 +1,6 @@
-from train.train_vqa import train_vqa, eval_vqa_forgetting, vqa_replay_step
-from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, nlvr2_replay_step
-from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, snli_ve_replay_step
+from train.train_vqa import train_vqa, eval_vqa_forgetting, vqa_replay_step, get_vqa_train_dataset
+from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, nlvr2_replay_step, get_nlvr2_train_dataset
+from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, snli_ve_replay_step, get_snli_ve_train_dataset
 
 from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
 from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
@@ -49,7 +49,8 @@ vqa_config = {
         'train_method': train_vqa,
         'eval_forgetting_method': eval_vqa_forgetting,
         'batch_collate_fn': vqa_batch_collate,
-        'replay_step_method': vqa_replay_step
+        'replay_step_method': vqa_replay_step,
+        'get_train_dataset_method': get_vqa_train_dataset,
 }
 
 nlvr_config = {
@@ -67,7 +68,8 @@ nlvr_config = {
         'train_method': train_nlvr2,
         'eval_forgetting_method': eval_nlvr2_forgetting,
         'batch_collate_fn': nlvr2_batch_collate,
-        'replay_step_method': nlvr2_replay_step
+        'replay_step_method': nlvr2_replay_step,
+        'get_train_dataset_method': get_nlvr2_train_dataset,
 }
 
 snli_ve_config = {
@@ -86,7 +88,8 @@ snli_ve_config = {
         'train_method': train_snli_ve,
         'eval_forgetting_method': eval_snli_ve_forgetting,
         'batch_collate_fn': snlive_batch_collate,
-        'replay_step_method': snli_ve_replay_step
+        'replay_step_method': snli_ve_replay_step,
+        'get_train_dataset_method': get_snli_ve_train_dataset,
 }
 
 task_configs = {

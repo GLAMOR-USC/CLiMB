@@ -177,35 +177,39 @@ def main():
                 logger.info("Found checkpoint for task {}!".format(task_name))
                 model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
                 logger.info("Loaded model checkpoint from task {}! Moving on to next task...".format(task_name))
-                continue
 
-            # Load the correct training method for current CL task, and call the training method
-            logger.info("-"*100)
-            logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
-            train_method = task_configs[task_key]['train_method']
-            best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, memory_buffers)
+                get_train_dataset_method = task_configs[task_key]['get_train_dataset_method']
+                task_train_dataset = get_train_dataset_method(args, task_configs, model_config, tokenizer)
 
-            logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
+            else:
 
-            # Save best model checkpoint, and separately save the models' Encoder object
-            logger.info("Saving best model and encoder checkpoint after {} training".format(task_name))
-            if not os.path.isdir(task_output_dir):
-                os.makedirs(task_output_dir)
-            best_task_model = best_model['model']
-            torch.save(best_task_model.state_dict(), os.path.join(task_output_dir, 'model'))
-            torch.save(best_task_model.get_encoder().state_dict(), os.path.join(task_output_dir, 'encoder'))
-            logger.info("Saved checkpoint!")
+                # Load the correct training method for current CL task, and call the training method
+                logger.info("-"*100)
+                logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
+                train_method = task_configs[task_key]['train_method']
+                best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, memory_buffers)
 
-            # Save CL results so far
-            task_results = {
-                'task_num': task_num,
-                'task_key': task_key,
-                'best_score': best_eval_score,
-                'best_epoch': best_model['epoch']
-            }
-            results.append(task_results)
-            json.dump(results, open(results_file, 'w'))
-            logger.info("Saved continual learning results so far!")
+                logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
+
+                # Save best model checkpoint, and separately save the models' Encoder object
+                logger.info("Saving best model and encoder checkpoint after {} training".format(task_name))
+                if not os.path.isdir(task_output_dir):
+                    os.makedirs(task_output_dir)
+                best_task_model = best_model['model']
+                torch.save(best_task_model.state_dict(), os.path.join(task_output_dir, 'model'))
+                torch.save(best_task_model.get_encoder().state_dict(), os.path.join(task_output_dir, 'encoder'))
+                logger.info("Saved checkpoint!")
+
+                # Save CL results so far
+                task_results = {
+                    'task_num': task_num,
+                    'task_key': task_key,
+                    'best_score': best_eval_score,
+                    'best_epoch': best_model['epoch']
+                }
+                results.append(task_results)
+                json.dump(results, open(results_file, 'w'))
+                logger.info("Saved continual learning results so far!")
 
             if args.cl_algorithm == 'experience_replay':
                 task_replay_memory = ReplayMemoryBuffer(args=args,
