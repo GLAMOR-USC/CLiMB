@@ -39,13 +39,17 @@ device = torch.device(
 # Not sure where this class belongs, should I create a new file? putting it here for now
 class ReplayMemoryBuffer:
 
-    def __init__(self, args, task_config, train_dataset, memory_percentage, sampling_strategy):
+    def __init__(self, args, task_key, task_config, train_dataset, memory_percentage, sampling_strategy):
 
+        self.task_key = task_key
         self.task_name = task_config['task_name']
         self.batch_collate_fn = task_config['batch_collate_fn']
 
         self.dataset = train_dataset
-        self.batch_size = args.batch_size
+        if task_key == 'nlvr2':
+            self.batch_size = args.batch_size/2
+        else:
+            self.batch_size = args.batch_size
         self.visual_mode = args.visual_mode
 
         self.memory_percentage = memory_percentage                      # Percent of training samples to store in memory
@@ -66,9 +70,9 @@ class ReplayMemoryBuffer:
     def __len__(self):
         return len(self.memory_idxs)
 
-    def sample_memory_batch(self):
+    def sample_memory_batch(self, batch_size=self.batch_size):
 
-        sampled_instances = random.sample(self.memory_idxs, self.batch_size)
+        sampled_instances = random.sample(self.memory_idxs, batch_size)
         batch = self.batch_collate_fn([self.dataset[i] for i in sampled_instances], self.visual_mode)
         return batch
 
@@ -213,6 +217,7 @@ def main():
 
             if args.cl_algorithm == 'experience_replay':
                 task_replay_memory = ReplayMemoryBuffer(args=args,
+                                                        task_key=task_key,
                                                         task_config=task_configs[task_key],
                                                         train_dataset=task_train_dataset,
                                                         memory_percentage=args.memory_percentage,
