@@ -107,7 +107,7 @@ def nlvr2_batch_collate(batch, visual_mode):
     
 
 def build_nlvr2_dataloader(args, data_dir, split, visual_mode):
-    logger.info("Creating NLVRv2 {} dataloader with batch size of {}".format(split, args.batch_size))
+    logger.info("Creating NLVRv2 {} dataloader with batch size of {}".format(split, int(args.batch_size/2)))
 
     dataset = NLVR2Dataset(data_dir, split, visual_mode)
     dataloader = torch.utils.data.DataLoader(

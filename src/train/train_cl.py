@@ -47,7 +47,7 @@ class ReplayMemoryBuffer:
 
         self.dataset = train_dataset
         if task_key == 'nlvr2':
-            self.batch_size = args.batch_size/2
+            self.batch_size = int(args.batch_size/2)
         else:
             self.batch_size = args.batch_size
         self.visual_mode = args.visual_mode
@@ -70,9 +70,9 @@ class ReplayMemoryBuffer:
     def __len__(self):
         return len(self.memory_idxs)
 
-    def sample_memory_batch(self, batch_size=self.batch_size):
+    def sample_memory_batch(self):
 
-        sampled_instances = random.sample(self.memory_idxs, batch_size)
+        sampled_instances = random.sample(self.memory_idxs, self.batch_size)
         batch = self.batch_collate_fn([self.dataset[i] for i in sampled_instances], self.visual_mode)
         return batch
 
