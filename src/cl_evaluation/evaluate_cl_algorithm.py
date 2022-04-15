@@ -65,7 +65,6 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
 
     model_config = model_configs[args.encoder_name]
     batch2inputs_converter = model_config['batch2inputs_converter']
-    classifier_class = model_config['classifier_class']
 
     cl_results = json.load(open(results_file))
     assert len(cl_results) == len(args.ordered_cl_tasks)
@@ -78,16 +77,16 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
         task_name = task_configs[task_key]['task_name']
         if task_num < 1:
             continue
-        logger.info("Evaluating {} encoder after training on {}, on previously-seen tasks {}".format(args.encoder_name,
+        logger.info("Evaluating {} model after training on {}, on previously-seen tasks {}".format(args.encoder_name,
                                                                                                      task_name,
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
+        model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'model')
 
         # Go from all previous tasks from {0, ..., task_num-1}
         for prev_task_num in range(task_num):
 
             prev_task_key = args.ordered_cl_tasks[prev_task_num]
             # Get model path of prev_task_key
-            model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(prev_task_num, prev_task_key), 'model')
 
             prev_task_config = task_configs[prev_task_key]
             prev_task_name = prev_task_config['task_name']

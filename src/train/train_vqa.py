@@ -195,7 +195,7 @@ def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
     model.train()
     return eval_score
 
-def eval_vqa_forgetting(args, model, task_configs, model_config, model_path, tokenizer, device):
+def eval_vqa_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
 
     vqa_config = task_configs['vqa']
     data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
@@ -218,6 +218,7 @@ def eval_vqa_forgetting(args, model, task_configs, model_config, model_path, tok
 
     # Load model with encoder weights from encoder_path, and classifier weights from model_path
     model.load_state_dict(torch.load(model_path))
+    logger.info("Loaded model checkpoint from {}".format(model_path))
 
     # Load encoder weights from encoder checkpoint
     #ckpt_encoder_dict = torch.load(encoder_path)
