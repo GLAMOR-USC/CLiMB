@@ -15,7 +15,7 @@ from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.vision_datasets import cocodetection_dataset as datasets 
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
-from modeling import load_encoder_map
+from modeling import load_encoder_map, continual_learner_map
 from configs.model_configs import model_configs
 from utils.seed_utils import set_seed
 
@@ -173,12 +173,12 @@ def example_based_accuracy(y_true, y_pred):
 
 '''
 
-def train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 1):
+def train_mscoco_detection(args, model, task_configs, model_config, device, percent = 1):
 
     mscoco_detection_config   = task_configs['ms-coco_detection']
     mscoco_config = task_configs['ms-coco']
-    images_dir      = mscoco_config['data_dir']
-    annotation_dir  = mscoco_detection_config['annotation_dir']
+    images_dir      = os.path.join(args.mcl_data_dir, mscoco_config['data_dir'])
+    annotation_dir  = os.path.join(args.mcl_data_dir, mscoco_detection_config['annotation_dir'])
     num_labels      = mscoco_detection_config['num_labels']
     visual_mode     = model_config['visual_mode']
 
@@ -197,15 +197,7 @@ def train_mscoco_detection(args, encoder, task_configs, model_config, device, pe
                                                                                 split='val', 
                                                                                 visual_mode=visual_mode)
     # Create model
-    encoder_dim         = model_config['encoder_dim']
-    visual_mode         = model_config['visual_mode']
-    classifier_class    = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels)
-    #batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
-
 
     # Training hyperparameters
     num_epochs      = mscoco_detection_config['num_epochs']
@@ -274,7 +266,7 @@ def train_mscoco_detection(args, encoder, task_configs, model_config, device, pe
             target = targets.to(device)
 
             #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-            output = model(**inputs)
+            output = model(task_key='ms-coco_detection', **inputs)
             logits = output[1]
             # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
             loss = loss_criterion(logits, target) * target.shape[1]
@@ -379,7 +371,7 @@ def eval_mscoco_detection(args, model, mscoco_detection_val_dataloader, device):
 
         #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
         with torch.no_grad():
-            output = model(**inputs)
+            output = model(task_key='ms-coco_detection', **inputs)
         logits = output[1]
         loss = loss_criterion(logits, target) * target.shape[1]
         cumloss_ += loss.item()
@@ -426,6 +418,7 @@ def main():
             self.shuffle = True
             self.num_workers = 2
             self.encoder_name = 'vilt'
+            self.mcl_data_dir = '/data/datasets/MCL/'
             self.pretrained_model_name = 'dandelin/vilt-b32-mlm'
             self.seed = 42
             self.visual_mode = 'pil-image' #'raw'
@@ -436,13 +429,14 @@ def main():
     model_config = model_configs[args.encoder_name]
     load_encoder_method = load_encoder_map[args.encoder_name]
     encoder = load_encoder_method(args.pretrained_model_name, device)
+    continual_learner_class = continual_learner_map[args.encoder_name]
+    model = continual_learner_class(['ms-coco_detection'], encoder, model_config['encoder_dim'], task_configs)
 
-
-    train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.01)
-    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.05)
-    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.1)
-    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 0.5)
-    #train_mscoco_detection(args, encoder, task_configs, model_config, device, percent = 1)
+    train_mscoco_detection(args, model, task_configs, model_config, device, percent = 0.01)
+    #train_mscoco_detection(args, model, task_configs, model_config, device, percent = 0.05)
+    #train_mscoco_detection(args, model, task_configs, model_config, device, percent = 0.1)
+    #train_mscoco_detection(args, model, task_configs, model_config, device, percent = 0.5)
+    #train_mscoco_detection(args, model, task_configs, model_config, device, percent = 1)
 
 if __name__ == '__main__':
     main()

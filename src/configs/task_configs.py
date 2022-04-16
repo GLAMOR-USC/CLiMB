@@ -1,21 +1,26 @@
-from train.train_vqa import train_vqa, eval_vqa_forgetting
-from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
-from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting
+from train.train_vqa import train_vqa, eval_vqa_forgetting, vqa_replay_step, get_vqa_train_dataset
+from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, nlvr2_replay_step, get_nlvr2_train_dataset
+from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, snli_ve_replay_step, get_snli_ve_train_dataset
+
+from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
+from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
+from data.visionlanguage_datasets.snli_ve_dataset import snlive_batch_collate
 
 from train.train_mscoco_detection import train_mscoco_detection
 
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve']
 
 mscoco_config = {
-        'data_dir': '/data/datasets/MCL/ms-coco',
+        'data_dir': 'ms-coco/',
 }
 
 mscoco_detection_config = {
         'task_name': 'MLIC',
-        'annotation_dir': '/data/datasets/MCL/ms-coco/detections/annotations/',
+        'annotation_dir': 'ms-coco/detections/annotations/',
         'images_source': 'ms-coco',
         'splits': ['train', 'val'],
         'num_labels': 80,
+        'num_images': 1,
         'model_type': 'classification',
         'num_epochs': 10,
         'lr': 1e-4,
@@ -25,15 +30,16 @@ mscoco_detection_config = {
 }
 
 flickr_config = {
-    'data_dir': '/data/datasets/MCL/flickr30k'
+    'data_dir': 'flickr30k/',
 }
 
 vqa_config = {
         'task_name': 'VQAv2',
-        'data_dir': '/data/datasets/MCL/vqav2',
+        'data_dir': 'vqav2/',
         'images_source': 'ms-coco',
         'splits': ['train', 'val'],
         'num_labels': 3129,
+        'num_images': 1,
         'model_type': 'classification',
         'num_epochs': 10,
         'lr': 1e-4,
@@ -41,14 +47,18 @@ vqa_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_vqa,
-        'eval_forgetting_method': eval_vqa_forgetting
+        'eval_forgetting_method': eval_vqa_forgetting,
+        'batch_collate_fn': vqa_batch_collate,
+        'replay_step_method': vqa_replay_step,
+        'get_train_dataset_method': get_vqa_train_dataset,
 }
 
 nlvr_config = {
         'task_name': 'NLVRv2',
-        'data_dir': '/data/datasets/MCL/nlvr2',
+        'data_dir': 'nlvr2/',
         'splits': ['train', 'val'],
         'num_labels': 2,
+        'num_images': 2,
         'model_type': 'classification',
         'num_epochs': 10,
         'lr': 1e-4,
@@ -56,15 +66,19 @@ nlvr_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_nlvr2,
-        'eval_forgetting_method': eval_nlvr2_forgetting
+        'eval_forgetting_method': eval_nlvr2_forgetting,
+        'batch_collate_fn': nlvr2_batch_collate,
+        'replay_step_method': nlvr2_replay_step,
+        'get_train_dataset_method': get_nlvr2_train_dataset,
 }
 
 snli_ve_config = {
         'task_name': 'SNLI-VE',
-        'data_dir': '/data/datasets/MCL/snli-ve',
+        'data_dir': 'snli-ve/',
         'images_source': 'flickr30k',
         'splits': ['train', 'dev', 'test'],
         'num_labels': 3,
+        'num_images': 1,
         'model_type': 'classification',
         'num_epochs': 5,
         'lr': 5e-5,
@@ -72,7 +86,10 @@ snli_ve_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'train_method': train_snli_ve,
-        'eval_forgetting_method': eval_snli_ve_forgetting
+        'eval_forgetting_method': eval_snli_ve_forgetting,
+        'batch_collate_fn': snlive_batch_collate,
+        'replay_step_method': snli_ve_replay_step,
+        'get_train_dataset_method': get_snli_ve_train_dataset,
 }
 
 task_configs = {

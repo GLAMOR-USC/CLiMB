@@ -99,7 +99,7 @@ class NLVR2Dataset(Dataset):
 
 
 #TODO: implement visual_mode = faster-RCNN 
-def batch_collate(batch, visual_mode):
+def nlvr2_batch_collate(batch, visual_mode):
     raw_texts, pil_objs, labels = zip(*batch)
     return {'raw_texts': list(raw_texts), 
             'images': pil_objs, 
@@ -107,15 +107,15 @@ def batch_collate(batch, visual_mode):
     
 
 def build_nlvr2_dataloader(args, data_dir, split, visual_mode):
-    logger.info("Creating NLVRv2 {} dataloader with batch size of {}".format(split, args.batch_size))
+    logger.info("Creating NLVRv2 {} dataloader with batch size of {}".format(split, int(args.batch_size/2)))
 
     dataset = NLVR2Dataset(data_dir, split, visual_mode)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers = args.num_workers,
-        batch_size = args.batch_size,
+        batch_size = int(args.batch_size/2),
         shuffle = (split=='train'),
-        collate_fn = lambda x: batch_collate(x, visual_mode)
+        collate_fn = lambda x: nlvr2_batch_collate(x, visual_mode)
         )
     return dataloader
 

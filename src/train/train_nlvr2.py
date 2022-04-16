@@ -32,22 +32,27 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
+def get_nlvr2_train_dataset(args, task_configs, model_config, tokenizer):
 
     nlvr_config = task_configs['nlvr2']
-    data_dir = nlvr_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, nlvr_config['data_dir'])
+    visual_mode = model_config['visual_mode']
+    # Create dataloaders for training and validation
+    train_dataloader = build_nlvr2_dataloader(args=args,
+                                            data_dir=data_dir,
+                                            split='train',
+                                            visual_mode=visual_mode)
+    return train_dataloader.dataset
+
+def train_nlvr2(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
+
+    nlvr_config = task_configs['nlvr2']
+    data_dir = os.path.join(args.mcl_data_dir, nlvr_config['data_dir'])
     num_labels = nlvr_config['num_labels']
 
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels,
-                             num_images=2)
-    model.expand_modality_type_embeddings(type_vocab_size=3)
     model.to(device)
 
     # Create dataloaders for training and validation
@@ -88,6 +93,11 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
         power=1,
     )
 
+    if args.cl_algorithm == 'experience_replay':
+        assert replay_memory is not None
+        previous_tasks = list(replay_memory.keys())
+        do_replay = True if len(previous_tasks) > 0 else False
+
     best_score = 0
     best_model = {
         'epoch': 0,
@@ -103,7 +113,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             target = batch['labels'].to(device)
             inputs = batch2inputs_converter(batch)
 
-            output = model.fwd_multi_imgs(**inputs)
+            output = model(task_key='nlvr2', **inputs)
             logits = output[1]
             loss = loss_criterion(logits, target)
 
@@ -112,8 +122,15 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             scheduler.step()
             optimizer.zero_grad()
 
-            if step % 100 == 0:
+            if (step + 1) % 100 == 0:
                 wandb.log({'nlvr': {'loss': loss.item()}})
+
+            if args.cl_algorithm == 'experience_replay' and do_replay is True:
+                if (step + 1) % args.replay_frequency == 0:
+                    sampled_previous_task = random.choice(previous_tasks)
+                    replay_step_method = task_configs[sampled_previous_task]['replay_step_method']
+                    replay_loss = replay_step_method(model, replay_memory[sampled_previous_task], task_configs, batch2inputs_converter, device)
+                    logger.info("{} replay step: loss = {:.5f}".format(task_configs[sampled_previous_task]['task_name'], replay_loss))
 
         # Do evaluation after epoch
         eval_score = eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter)
@@ -126,7 +143,7 @@ def train_nlvr2(args, encoder, task_configs, model_config, tokenizer, device):
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
-    return best_score, best_model
+    return best_score, best_model, train_dataloader.dataset
 
 def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
 
@@ -135,7 +152,7 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
     for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on NLVR2 val set')):
         inputs = batch2inputs_converter(batch)
         with torch.no_grad():
-            output = model.fwd_multi_imgs(**inputs)
+            output = model(task_key='nlvr2', **inputs)
             logits = output[1]
 
         batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
@@ -147,22 +164,15 @@ def eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter):
     model.train()
     return eval_score
 
-def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device):
+def eval_nlvr2_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
 
     nlvr_config = task_configs['nlvr2']
-    data_dir = nlvr_config['data_dir']
+    data_dir = os.path.join(args.mcl_data_dir, nlvr_config['data_dir'])
     num_labels = nlvr_config['num_labels']
 
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
-    encoder_dim = model_config['encoder_dim']
     visual_mode = model_config['visual_mode']
-    classifier_class = model_config['classifier_class']
-    model = classifier_class(encoder=encoder, 
-                             encoder_dim=encoder_dim, 
-                             num_labels=num_labels,
-                             num_images=2)
-    model.expand_modality_type_embeddings(type_vocab_size=3)
     model.to(device)
 
     # Create dataloaders for validation
@@ -173,13 +183,49 @@ def eval_nlvr2_forgetting(args, encoder, model_path, encoder_path, task_configs,
 
     # Load model with encoder weights from encoder_path, and classifier weights from model_path
     model.load_state_dict(torch.load(model_path))
+    logger.info("Loaded model checkpoint from {}".format(model_path))
 
     # Load encoder weights from encoder checkpoint
-    ckpt_encoder_dict = torch.load(encoder_path)
-    model_encoder_dict = model.get_encoder().state_dict()
+    #ckpt_encoder_dict = torch.load(encoder_path)
+    #model_encoder_dict = model.get_encoder().state_dict()
 
-    for k in ckpt_encoder_dict.keys():
-        if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
-            model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+    #for k in ckpt_encoder_dict.keys():
+    #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
+    #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
     return eval_nlvr2(args, model, val_dataloader, device, batch2inputs_converter)
+
+def nlvr2_replay_step(model, nlvr2_replay_memory, task_configs, batch2inputs_converter, device):
+
+    nlvr_config = task_configs['nlvr2']
+    # Training hyperparameters
+    num_epochs = nlvr_config['num_epochs']
+    lr = nlvr_config['lr']
+    adam_epsilon = nlvr_config['adam_epsilon']
+    weight_decay = nlvr_config['weight_decay']
+    warmup_ratio = nlvr_config['warmup_ratio']
+
+    # Create optimizer
+    loss_criterion = nn.CrossEntropyLoss()
+    no_decay = ['bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
+    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
+    
+    replay_batch = nlvr2_replay_memory.sample_memory_batch()
+    target = replay_batch['labels'].to(device)
+    inputs = batch2inputs_converter(replay_batch)
+
+    output = model(task_key='nlvr2', **inputs)
+    logits = output[1]
+    loss = loss_criterion(logits, target)
+
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    wandb.log({'nlvr': {'loss': loss.item()}})
+
+    return loss.item()
