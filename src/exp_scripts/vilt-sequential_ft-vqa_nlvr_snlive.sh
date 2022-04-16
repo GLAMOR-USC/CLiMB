@@ -6,7 +6,8 @@ python -m train.train_cl --encoder_name vilt \
                         --ordered_cl_tasks vqa,nlvr2,snli-ve \
                         --cl_algorithm sequential_ft \
                         --mcl_data_dir /data/datasets/MCL/ \
-            			--do_train \
+                        --do_train \
+			--do_eval \
                         --output_dir /data/experiments/MCL/ \
                         --wandb_project_name vl-cl \
                         --batch_size 64
