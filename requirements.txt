@@ -10,4 +10,4 @@ wandb
 datasets
 jsonlines
 scikit-learn
-
+matplotlib
