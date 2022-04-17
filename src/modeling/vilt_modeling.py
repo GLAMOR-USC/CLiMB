@@ -38,6 +38,9 @@ class ViltEncoderWrapper(nn.Module):
         '''
         Wrapper around Vilt model from huggingface library
         this is the class that gets saved during checkpointing for continual learning
+        args:
+        processor - instance of ViltProcessor
+        vilt - instance of ViltModel class
         '''
 
         super().__init__()
