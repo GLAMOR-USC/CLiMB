@@ -74,6 +74,8 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
+    if args.cl_algorithm == 'adapter':
+        model.set_active_adapters("vqa")
 
     # Create dataloaders for training and validation
     vqa_train_dataloader = build_vqa_dataloader(args=args,
@@ -208,6 +210,8 @@ def eval_vqa_forgetting(args, model, model_path, task_configs, model_config, tok
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
+    if args.cl_algorithm == 'adapter':
+        model.set_active_adapters("vqa")
 
     vqa_val_dataloader = build_vqa_dataloader(args=args,
                                           data_dir=data_dir,

@@ -157,6 +157,18 @@ class ViltContinualLearner(nn.Module):
 
         return self.vilt_encoder
 
+    def add_adapter(self, task_key, config):
+
+        self.vilt_encoder.vilt.add_adapter(task_key, config)
+
+    def train_adapter(self, task_key):
+
+        self.vilt_encoder.vilt.train_adapter(task_key)
+
+    def set_active_adapters(self, task_key):
+
+        self.vilt_encoder.vilt.set_active_adapters(task_key)
+
 def load_vilt_encoder(pretrained_vilt_name, device):
 
     logger.info("-"*100)

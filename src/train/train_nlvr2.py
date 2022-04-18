@@ -54,6 +54,8 @@ def train_nlvr2(args, model, task_configs, model_config, tokenizer, device, repl
     batch2inputs_converter = model_config['batch2inputs_converter']
     visual_mode = model_config['visual_mode']
     model.to(device)
+    if args.cl_algorithm == 'adapter':
+        model.set_active_adapters("nlvr2")
 
     # Create dataloaders for training and validation
     train_dataloader = build_nlvr2_dataloader(args=args,
@@ -174,6 +176,8 @@ def eval_nlvr2_forgetting(args, model, model_path, task_configs, model_config, t
     batch2inputs_converter = model_config['batch2inputs_converter']
     visual_mode = model_config['visual_mode']
     model.to(device)
+    if args.cl_algorithm == 'adapter':
+        model.set_active_adapters("nlvr2")
 
     # Create dataloaders for validation
     val_dataloader = build_nlvr2_dataloader(args=args,

@@ -21,12 +21,14 @@ from tqdm import tqdm
 import wandb
 
 from transformers import BertTokenizer
+from transformers.adapters import AdapterConfig
 
 from modeling import load_encoder_map, continual_learner_map
 
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
+from configs.adapter_configs import ADAPTER_MAP
 from utils.seed_utils import set_seed
 
 logger = logging.getLogger(__name__)
@@ -88,7 +90,7 @@ def main():
                         help="Name of pretrained model weights to load.")
     parser.add_argument("--ordered_cl_tasks", type=str, required=True,
                         help="Ordered list of VL task keys for continual learning, seprated by commas.")
-    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft', 'sequential_ft', 'experience_replay'],
+    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft', 'sequential_ft', 'experience_replay', 'adapter'],
                         help="Name of Continual Learning algorithm used.")
     parser.add_argument("--mcl_data_dir", type=str, required=True, default='/data/datasets/MCL/',
                         help="Directory where all the MCL data is stored")
@@ -104,6 +106,10 @@ def main():
                         help="Strategy for sampling memory buffer samples.")
     parser.add_argument("--replay_frequency", type=int,
                         help="Number of training steps after which to do a memory replay step.")
+
+    # Arguments specific to Adapters algorithm
+    parser.add_argument("--adapter_config", choices=list(ADAPTER_MAP.keys()),
+                        help="Type of Adapter architecture")
 
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
@@ -122,6 +128,8 @@ def main():
 
     # Set up experiment directories
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
+    if args.cl_algorithm == 'adapter':
+        experiment_name = '{}_{}'.format(experiment_name, args.adapter_config)
     for i, task_key in enumerate(args.ordered_cl_tasks):
         experiment_name = '{}-task{}_{}'.format(experiment_name, i, task_key)
     output_dir = os.path.join(args.output_dir, experiment_name)
@@ -152,7 +160,15 @@ def main():
     continual_learner_class = continual_learner_map[args.encoder_name]
     model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
     args.visual_mode = model_config['visual_mode']
-    #TODO: fix how the model is loaded everywhere
+
+    # Add Adapters for each task
+    if args.cl_algorithm == 'adapter':
+        adapter_config = AdapterConfig.load(args.adapter_config)
+        for task_key in args.ordered_cl_tasks:
+            model.add_adapter(task_key, config=adapter_config)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info('Total Parameters: {:.2f}M'.format(total_params*10**-6))
 
     if args.do_train:
 
@@ -177,6 +193,7 @@ def main():
 
             task_name = task_configs[task_key]['task_name']
             task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
+
             if os.path.isfile(os.path.join(task_output_dir, 'model')):
                 logger.info("Found checkpoint for task {}!".format(task_name))
                 model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
@@ -189,6 +206,13 @@ def main():
 
                 # Load the correct training method for current CL task, and call the training method
                 logger.info("-"*100)
+
+                if args.cl_algorithm == 'adapter':
+                    model.train_adapter(task_key)
+                    model.set_active_adapters(task_key)
+                    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
+                    logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
+
                 logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
                 train_method = task_configs[task_key]['train_method']
                 best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, memory_buffers)
