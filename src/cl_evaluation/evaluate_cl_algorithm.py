@@ -77,7 +77,7 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
         task_name = task_configs[task_key]['task_name']
         if task_num < 1:
             continue
-        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_configs[args.encoder_name],
+        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_config['encoder_name'],
                                                                                                      task_name,
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
         model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'model')

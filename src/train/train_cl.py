@@ -110,6 +110,8 @@ def main():
     # Arguments specific to Adapters algorithm
     parser.add_argument("--adapter_config", choices=list(ADAPTER_MAP.keys()),
                         help="Type of Adapter architecture")
+    parser.add_argument("--adapter_reduction_factor", type=int, default=0,
+                        help="Downsampling ratio for adapter layers")
 
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
@@ -164,6 +166,12 @@ def main():
     # Add Adapters for each task
     if args.cl_algorithm == 'adapter':
         adapter_config = AdapterConfig.load(args.adapter_config)
+        config_dict = adapter_config.to_dict()
+        if args.adapter_reduction_factor > 0:
+            config_dict['reduction_factor'] = args.adapter_reduction_factor
+        adapter_config = AdapterConfig.from_dict(config_dict)
+        logger.info("Adding Adapter layers with configuration:")
+        logger.info(str(adapter_config))
         for task_key in args.ordered_cl_tasks:
             model.add_adapter(task_key, config=adapter_config)
 
