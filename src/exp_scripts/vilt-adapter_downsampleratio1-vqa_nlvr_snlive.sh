@@ -6,6 +6,7 @@ python -m train.train_cl --encoder_name vilt \
                         --ordered_cl_tasks vqa,nlvr2,snli-ve \
                         --cl_algorithm adapter \
 			--adapter_config houlsby \
+			--adapter_reduction_factor 1 \
 			--mcl_data_dir /data/datasets/MCL/ \
                         --do_train \
 			--do_eval \
