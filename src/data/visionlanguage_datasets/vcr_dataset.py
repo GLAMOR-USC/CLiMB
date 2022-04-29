@@ -182,12 +182,7 @@ if __name__ == '__main__':
         def __init__(self):
             self.batch_size = 4
             self.num_workers = 2
-
-    class Args:
-        def __init__(self):
-            self.batch_size = 4
-            self.num_workers = 2
-
+    
     args = Args()
     data_dir          = '/data/datasets/MCL/vcr/'
     #annotation_dir    = '/data/datasets/MCL/vcr/annotation/'
@@ -199,13 +194,13 @@ if __name__ == '__main__':
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     #vcr.VCRDataset(data_dir, split, tokenizer, task_type='answer')
 
-    vcr_train_dataloader  = vcr.build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer')
-    vcr_train_dataloader  = vcr.build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer')
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer')
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer')
 
     print(len(vcr_train_dataloader))
 
-    vcr_train_dataloader  = vcr.build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale')
-    vcr_train_dataloader  = vcr.build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale')
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale')
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale')
 
     print(len(vcr_train_dataloader))
 
