@@ -128,7 +128,7 @@ def get_data_loader(tokenizer, task_name, split, max_len, batch_size, data_dir=N
         dataset, 
         shuffle=(split=='train'), 
         batch_size=batch_size,
-        num_workers=4,
+        num_workers=2,
     )
 
     return dataloader

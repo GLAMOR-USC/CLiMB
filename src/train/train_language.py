@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import sys
+sys.path.insert(0, '.')
 import time
 import math
 import shutil
@@ -20,10 +21,14 @@ import torch
 from torch import nn
 from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
+from transformers import BertTokenizer
 
 from data.language_datasets.text_dataset import get_data_loader
+from modeling import load_encoder_map
+from configs.model_configs import model_configs
+from configs.task_configs import task_configs
+from utils.seed_utils import set_seed
 
-sys.path.insert(0, '.')
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 #os.environ["WANDB_START_METHOD"] = "thread"
 #wandb.init(project='language')
@@ -41,6 +46,7 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     max_len = task_config['max_len']
     n_shot = args.num_shot
     subsample_seed = args.subsample_seed
+    output_dir = args.output_dir
 
     # load the pre-computed mean image
     image_fn = "coco_mean_image.png"
@@ -55,18 +61,18 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels)
 
-    '''
+    #'''
     # load the ckpt of upstream tasks
-    path = '/data/experiments/MCL/old_checkpoints/vilt-singletask_ft-task0_nlvr2/checkpoints/task0_nlvr2/model'
-    if 'nlvr2' in path:
-        model.expand_modality_type_embeddings(type_vocab_size=3)
+    path = '/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve/checkpoints/task2_snli-ve/model'
+    if 'nlvr' in path:
+        model.vilt_encoder.expand_modality_type_embeddings(type_vocab_size=3)
     ckpt_dict = torch.load(path)
     model_dict = model.state_dict()
     for k in ckpt_dict.keys():
-        if 'clf_layer' not in k:
+        if 'clf_layer' and 'task_layer' not in k:
             model_dict[k] = ckpt_dict[k].clone()
     model.load_state_dict(model_dict)
-    '''
+    #'''
 
     if max_len > 40:
         img_sz = 128
@@ -122,12 +128,6 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
 
 
     best_score = 0
-    best_model = {
-        'epoch': 0,
-        'model': copy.deepcopy(model), #model.state_dict(),
-        'optimizer_state': optimizer.state_dict()
-    }
-
     model.zero_grad()
     model.train()
     for epoch in range(num_epochs):
@@ -154,17 +154,16 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
             best_score = eval_score
-            best_model['epoch'] = epoch
-            best_model['model'] = copy.deepcopy(model)
+            best_epoch = epoch+1
 
-    write_results(n_shot, subsample_seed, best_score, task_name, max_len)
-    return best_score, best_model
+    write_results(n_shot, subsample_seed, best_score, task_name, max_len, output_dir)
+    return best_score, best_epoch
 
 
-def write_results(n_shot, subsample_seed, best_score, task_name, max_len):
+def write_results(n_shot, subsample_seed, best_score, task_name, max_len, output_dir):
     tree = lambda: defaultdict(tree)
     all_scores = tree()
-    out_fn = f'{task_name}_results-{max_len}.json'
+    out_fn = os.path.join(output_dir, f'{task_name}_results-{max_len}.json')
     # load previous results
     if os.path.exists(out_fn):
         with open(out_fn, "r") as f:
@@ -236,3 +235,76 @@ def eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter
 
     model.train()
     return eval_score
+
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+
+    ## Required parameters
+    parser.add_argument("--task_name", default=None, type=str, required=True, choices=['imdb', 'sst2', 'hellaswag', 'piqa', 'commonsenseqa'],
+                        help="The name of the language-only task.")
+    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
+                        help="The name of the base pretrained encoder.")
+    parser.add_argument("--model_catog", default='vilt-vl', type=str, choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc'],
+                        help="The catogory for model class.")
+    parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
+                        help="Name of pretrained model weights to load.")
+    parser.add_argument("--output_dir", type=str, required=True,
+                        help="Name of output directory, where all experiment results and checkpoints are saved.")
+    parser.add_argument("--wandb_project_name", type=str, default="vl-cl",
+                        help="Name of W&B project where experiments are logged.")
+
+
+    parser.add_argument("--batch_size", type=int, default=32,
+                        help="Batch size.")
+    parser.add_argument("--num_workers", type=int, default=2,
+                        help="Number of workers for dataloader")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed.")
+
+    # only used by few-shot downstream tasks
+    parser.add_argument("--num_shot", type=int,
+                        help="Number of training data (per class)")
+    parser.add_argument("--subsample_seed", type=int,
+                        help="Random seed for few-shot sampling.")
+
+    
+    args = parser.parse_args()
+    print(args)
+
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
+    set_seed(args)
+
+    # Load the Encoder model
+    model_config = model_configs[args.model_catog]
+    load_encoder_method = load_encoder_map[args.encoder_name]
+    encoder = load_encoder_method(args.pretrained_model_name, device)
+
+    # Create W&B experiment
+    experiment_name = '{}-{}-{}'.format(args.task_name, args.num_shot, args.subsample_seed)
+    logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
+    wandb.init(project=args.wandb_project_name,
+        name=experiment_name,
+        entity='tejas1995',
+        reinit=True)
+
+    results = []
+    logger.info("-"*100)
+    logger.info("Training models on downstream language-only tasks...")
+
+    # Load the correct training method for current CL task, and call the training method
+    task_config = task_configs[args.task_name]
+    logger.info("-"*100)
+    best_eval_score, best_epoch = train_language(args, encoder, task_config, model_config, tokenizer, device)
+    logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(args.task_name, best_eval_score, best_epoch))
+
+if __name__ == '__main__':
+    main()

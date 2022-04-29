@@ -12,4 +12,5 @@ with open(fn, "r") as f:
 print(fn)
 for k in rdict.keys():
     scores = np.array(list(rdict[k].values()))
+    assert len(scores) == 5, "missing experiments"
     print(f'{k}: {scores.mean():.1f} ±{scores.std():.1f}')

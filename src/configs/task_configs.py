@@ -1,6 +1,5 @@
 from train.train_vqa import train_vqa, eval_vqa_forgetting
 from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting
-from train.train_language import train_language, eval_language
 
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'sst2', 'imdb', 'hellaswag', 'piqa', 'commonsenseqa']
 
@@ -52,7 +51,6 @@ imdb_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_language
 }
 
 sst2_config = {
@@ -68,7 +66,6 @@ sst2_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_language
 }
 
 
@@ -84,7 +81,6 @@ hellaswag_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_language
 }
 
 
@@ -100,7 +96,6 @@ commonsenseqa_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_language
 }
 
 
@@ -116,7 +111,6 @@ piqa_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_language
 }
 
 

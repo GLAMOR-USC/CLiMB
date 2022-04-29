@@ -47,6 +47,7 @@ class ViltEncoderWrapper(nn.Module):
         self.device = device
         self.processor.tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
         self.max_text_length = self.vilt.config.max_position_embeddings
+        self.encoder_dim = 768
 
     def reset_processor(self, max_text_length, img_size):
         self.max_text_length = max_text_length
@@ -77,6 +78,15 @@ class ViltEncoderWrapper(nn.Module):
         #debug(self.processor, encodings)
         return encodings
 
+    def expand_modality_type_embeddings(self, type_vocab_size=3):
+        self.vilt.config.modality_type_vocab_size = type_vocab_size
+        #https://github.com/dandelin/ViLT/blob/762fd3975c180db6fc88f577cf39549983fa373a/vilt/modules/vilt_module.py#L85
+        emb_data = self.vilt.embeddings.token_type_embeddings.weight.data
+        self.vilt.embeddings.token_type_embeddings = nn.Embedding(type_vocab_size, self.encoder_dim)
+        self.vilt.embeddings.token_type_embeddings.weight.data[0, :] = emb_data[0, :]
+        self.vilt.embeddings.token_type_embeddings.weight.data[1, :] = emb_data[1, :]
+        self.vilt.embeddings.token_type_embeddings.weight.data[2, :] = emb_data[1, :]
+
     def forward(self, **encodings):
 
         output = self.vilt(**encodings)
@@ -103,14 +113,6 @@ class ViltForImageTextClassification(nn.Module):
                             nn.Linear(encoder_dim*2, num_labels)
                         )
 
-    def expand_modality_type_embeddings(self, type_vocab_size=3):
-        self.vilt_encoder.vilt.config.modality_type_vocab_size = type_vocab_size
-        #https://github.com/dandelin/ViLT/blob/762fd3975c180db6fc88f577cf39549983fa373a/vilt/modules/vilt_module.py#L85
-        emb_data = self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data
-        self.vilt_encoder.vilt.embeddings.token_type_embeddings = nn.Embedding(type_vocab_size, self.encoder_dim)
-        self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[0, :] = emb_data[0, :]
-        self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[1, :] = emb_data[1, :]
-        self.vilt_encoder.vilt.embeddings.token_type_embeddings.weight.data[2, :] = emb_data[1, :]
 
 
     def forward(self, images, texts):
