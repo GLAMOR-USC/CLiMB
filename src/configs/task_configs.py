@@ -51,6 +51,7 @@ vqa_config = {
         'batch_collate_fn': vqa_batch_collate,
         'replay_step_method': vqa_replay_step,
         'get_train_dataset_method': get_vqa_train_dataset,
+        'random_baseline_score': 0.0
 }
 
 nlvr_config = {
@@ -70,6 +71,7 @@ nlvr_config = {
         'batch_collate_fn': nlvr2_batch_collate,
         'replay_step_method': nlvr2_replay_step,
         'get_train_dataset_method': get_nlvr2_train_dataset,
+        'random_baseline_score': 50.0
 }
 
 snli_ve_config = {
@@ -90,6 +92,7 @@ snli_ve_config = {
         'batch_collate_fn': snlive_batch_collate,
         'replay_step_method': snli_ve_replay_step,
         'get_train_dataset_method': get_snli_ve_train_dataset,
+        'random_baseline_score': 33.33
 }
 
 task_configs = {
