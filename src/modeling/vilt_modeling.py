@@ -47,7 +47,7 @@ class ViltEncoderWrapper(nn.Module):
         self.device = device
         self.processor.tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
         self.max_text_length = self.vilt.config.max_position_embeddings
-        self.encoder_dim = 768
+        self.encoder_dim = self.vilt.config.hidden_size
 
     def reset_processor(self, max_text_length, img_size):
         self.max_text_length = max_text_length
@@ -93,9 +93,9 @@ class ViltEncoderWrapper(nn.Module):
         return output.pooler_output
 
 
-class ViltForImageTextClassification(nn.Module):
+class ViltContinualLearner(nn.Module):
 
-    def __init__(self, encoder, encoder_dim, num_labels, num_images=1):
+    def __init__(self, ordered_cl_tasks, encoder, encoder_dim, task_configs):
 
         '''
         encoder - instance of ViltEncoderWrapper class
@@ -106,28 +106,48 @@ class ViltForImageTextClassification(nn.Module):
         super().__init__()
         self.encoder_dim = encoder_dim
         self.vilt_encoder = encoder
-        self.clf_layer = nn.Sequential(
-                            nn.Linear(encoder_dim*num_images, encoder_dim*2),
-                            nn.LayerNorm(encoder_dim*2),
+        self.ordered_cl_tasks = ordered_cl_tasks
+        self.task_configs = task_configs
+
+        self.task_layer_dict = {}
+        for task_key in ordered_cl_tasks:
+            self.add_task_layer(task_key, task_configs[task_key])
+        self.task_layer = nn.ModuleDict(self.task_layer_dict)
+
+        if 'nlvr2' in ordered_cl_tasks:
+            self.vilt_encoder.expand_modality_type_embeddings()
+
+    def add_task_layer(self, task_key, task_config):
+
+        num_images = task_config['num_images']
+        num_labels = task_config['num_labels']
+        if task_config['model_type'] == 'classification':
+            clf_layer = nn.Sequential(
+                            nn.Linear(self.encoder_dim*num_images, self.encoder_dim*2),
+                            nn.LayerNorm(self.encoder_dim*2),
                             nn.GELU(),
-                            nn.Linear(encoder_dim*2, num_labels)
+                            nn.Linear(self.encoder_dim*2, num_labels)
                         )
+            self.task_layer_dict[task_key] = clf_layer
 
+    def forward(self, task_key, images, texts):
 
+        if self.task_configs[task_key]['num_images'] == 1:
+            return self.forward_single_image(task_key, images, texts)
+        else:
+            return self.forward_multi_images(task_key, images, texts, self.task_configs[task_key]['num_images'])
 
-    def forward(self, images, texts):
+    def forward_single_image(self, task_key, images, texts):
 
         encodings = self.vilt_encoder.process_inputs(images, texts)
+
         encoder_output = self.vilt_encoder(**encodings)
 
-        output_logits = self.clf_layer(encoder_output)
+        output_logits = self.task_layer[task_key](encoder_output)
         return encoder_output, output_logits
 
-    def get_encoder(self):
+    def forward_multi_images(self, task_key, images, texts, num_images=2):
 
-        return self.vilt_encoder
-
-    def fwd_multi_imgs(self, images, texts, num_images=2):
         flat_images_list = list(itertools.chain(*images))
         encodings = self.vilt_encoder.process_inputs(flat_images_list, texts)
 
@@ -154,19 +174,18 @@ class ViltForImageTextClassification(nn.Module):
             pooler_outputs.append(pooled_out)
         pooled_output = torch.cat(pooler_outputs, dim=-1) # [bs, 1536]
 
-        output_logits = self.clf_layer(pooled_output)
+        output_logits = self.task_layer[task_key](pooled_output)
         return pooled_output, output_logits
+
+
+    def get_encoder(self):
+
+        return self.vilt_encoder
 
 
 class ViltForSequenceClassification(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):
-
-        '''
-        encoder - instance of ViltEncoderWrapper class
-        encoder_dim - output dimension of vilt encoder
-        num_labels - number of labels for classification task
-        '''
 
         super().__init__()
         self.encoder_dim = encoder_dim
@@ -194,13 +213,6 @@ class ViltForSequenceClassification(nn.Module):
 class ViltForMultipleChoice(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):
-
-        '''
-        encoder - instance of ViltEncoderWrapper class
-        encoder_dim - output dimension of vilt encoder
-        num_labels - number of labels for classification task
-        # https://github.com/huggingface/transformers/blob/v4.17.0/src/transformers/models/bert/modeling_bert.py#L1603
-        '''
 
         super().__init__()
         self.encoder_dim = encoder_dim
