@@ -1,6 +1,6 @@
 from modeling.vilt_modeling import *
 
-vilt_vl_config = {
+vilt_config = {
     'encoder_dim': 768,
     'visual_mode': 'pil-image',
     'encoder_class': ViltEncoderWrapper,
@@ -22,7 +22,7 @@ vilt_lang_mc_config = {
 }
 
 model_configs = {
-    'vilt-vl': vilt_vl_config,
+    'vilt': vilt_config,
     'vilt-l-seq': vilt_lang_seq_config,
     'vilt-l-mc': vilt_lang_mc_config
 }
