@@ -128,10 +128,11 @@ class VQADataset(Dataset):
 
         labels = example['labels']
         scores = example['scores']
+        target_scores = target_tensor(self.num_labels, labels, scores)
 
-        return question, input_ids, image, labels, scores, question_id
+        return question, input_ids, image, labels, target_scores, question_id
 
-def batch_collate(batch, tokenizer, visual_mode, num_labels):
+def vqa_batch_collate(batch, visual_mode):
 
     #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
     pad_token = 0   # tokenizer.pad_token_id
@@ -152,14 +153,9 @@ def batch_collate(batch, tokenizer, visual_mode, num_labels):
     input_ids = torch.tensor(input_ids_padded, dtype=torch.long)
     attn_mask = torch.tensor(attn_masks, dtype=torch.long)
 
-    # Create the target tensor using scores
-    batch_scores = []
-    batch_labels = []
-    for x in batch:
-        labels, scores = x[3], x[4]
-        target_scores = target_tensor(num_labels, labels, scores)
-        batch_scores.append(target_scores)
-        batch_labels.append(labels)
+    # Stack the target tensors
+    batch_labels = [x[3] for x in batch]
+    batch_scores = [x[4] for x in batch]
     batch_scores = torch.stack(batch_scores, dim=0)
 
     # Stack the image tensors, doing padding if necessary for the sequence of region features
@@ -199,7 +195,7 @@ def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visua
         num_workers=args.num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=lambda x: batch_collate(x, tokenizer, visual_mode, num_labels))
+        collate_fn=lambda x: vqa_batch_collate(x, visual_mode))
     return dataloader
 
 if __name__ == '__main__':

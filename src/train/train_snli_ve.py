@@ -22,8 +22,8 @@ from torch import nn
 from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
-from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
-from data.visionlanguage_datasets.vqa_dataset import build_vqa_dataloader
+from data.image_datasets.flickr30kimages_dataset import Flickr30KImagesDataset
+from data.visionlanguage_datasets.snli_ve_dataset import build_snli_ve_dataloader
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -31,44 +31,35 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def compute_score_with_logits(logits, labels, device):
-    logits = torch.max(logits, 1)[1].data # argmax
-    one_hots = torch.zeros(*labels.size()).to(device)
-    one_hots.scatter_(1, logits.view(-1, 1), 1)
-    scores = (one_hots * labels)
-    return scores
+def get_snli_ve_train_dataset(args, task_configs, model_config, tokenizer):
 
-def get_vqa_train_dataset(args, task_configs, model_config, tokenizer):
+    snli_ve_config = task_configs['snli-ve']
+    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
 
-    vqa_config = task_configs['vqa']
-    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
-
-    # Load COCO Images dataset for image data backbone
-    images_source = vqa_config['images_source']
-    mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
+    # Load Flickr30K Images dataset for image data backbone
+    images_source = snli_ve_config['images_source']
+    flickr30k_config = task_configs[images_source]
+    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
 
     visual_mode = model_config['visual_mode']
+    snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
+                                                        data_dir=data_dir,
+                                                        images_dataset=images_dataset,
+                                                        split='train',
+                                                        tokenizer=tokenizer,
+                                                        visual_mode=visual_mode)
+    return snli_ve_train_dataloader.dataset
 
-    # Create dataloaders for training and validation
-    vqa_train_dataloader = build_vqa_dataloader(args=args,
-                                                data_dir=data_dir,
-                                                images_dataset=images_dataset,
-                                                split='train',
-                                                tokenizer=tokenizer,
-                                                visual_mode=visual_mode)
-    return vqa_train_dataloader.dataset
+def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
 
-def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
+    snli_ve_config = task_configs['snli-ve']
+    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
+    num_labels = snli_ve_config['num_labels']
 
-    vqa_config = task_configs['vqa']
-    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
-    num_labels = vqa_config['num_labels']
-
-    # Load COCO Images dataset for image data backbone
-    images_source = vqa_config['images_source']
-    mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
+    # Load Flickr30K Images dataset for image data backbone
+    images_source = snli_ve_config['images_source']
+    flickr30k_config = task_configs[images_source]
+    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
 
     # Create model
     visual_mode = model_config['visual_mode']
@@ -76,28 +67,28 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
     model.to(device)
 
     # Create dataloaders for training and validation
-    vqa_train_dataloader = build_vqa_dataloader(args=args,
-                                                data_dir=data_dir,
-                                                images_dataset=images_dataset,
-                                                split='train',
-                                                tokenizer=tokenizer,
-                                                visual_mode=visual_mode)
+    snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
+                                                        data_dir=data_dir,
+                                                        images_dataset=images_dataset,
+                                                        split='train',
+                                                        tokenizer=tokenizer,
+                                                        visual_mode=visual_mode)
 
-    vqa_val_dataloader = build_vqa_dataloader(args=args,
+    snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
                                               data_dir=data_dir,
                                               images_dataset=images_dataset,
-                                              split='val',
+                                              split='dev',
                                               tokenizer=tokenizer,
                                               visual_mode=visual_mode)
 
     # Training hyperparameters
-    num_epochs = vqa_config['num_epochs']
-    lr = vqa_config['lr']
-    adam_epsilon = vqa_config['adam_epsilon']
-    weight_decay = vqa_config['weight_decay']
+    num_epochs = snli_ve_config['num_epochs']
+    lr = snli_ve_config['lr']
+    adam_epsilon = snli_ve_config['adam_epsilon']
+    weight_decay = snli_ve_config['weight_decay']
 
     # Create optimizer
-    loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
+    loss_criterion = nn.CrossEntropyLoss(reduction='mean')
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
@@ -107,7 +98,7 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
     optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
     # Create Scheduler
     # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L263
-    max_steps = len(vqa_train_dataloader) * num_epochs
+    max_steps = len(snli_ve_train_dataloader) * num_epochs
     warmup_ratio = 0.1 # TODO remove hard code
     scheduler = get_polynomial_decay_schedule_with_warmup(
         optimizer,
@@ -133,15 +124,15 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
     model.train()
     for epoch in range(num_epochs):
         # Training loop for epoch
-        for step, batch in enumerate(tqdm(vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+        for step, batch in enumerate(tqdm(snli_ve_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
             inputs = batch2inputs_converter(batch)
-            target = batch['target_scores'].to(device)
+            labels = batch['labels'].to(device)
 
             #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-            output = model(task_key='vqa', **inputs)
+            output = model(task_key='snli-ve', **inputs)
             logits = output[1]
             # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
-            loss = loss_criterion(logits, target) * target.shape[1]
+            loss = loss_criterion(logits, labels)
 
             loss.backward()
 
@@ -150,7 +141,7 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
             optimizer.zero_grad()
 
             if (step + 1) % 100 == 0:
-                wandb.log({'vqa': {'loss': loss.item()}})
+                wandb.log({'snli-ve': {'loss': loss.item()}})
 
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
@@ -160,61 +151,61 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, memory
                     logger.info("{} replay step: loss = {:.5f}".format(task_configs[sampled_previous_task]['task_name'], replay_loss))
 
         # Do evaluation after epoch
-        eval_score = eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
+        eval_score = eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-        wandb.log({'vqa': {'val_score': eval_score}})
+        wandb.log({'snli-ve': {'dev_score': eval_score}})
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
             best_score = eval_score
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
-    return best_score, best_model, vqa_train_dataloader.dataset
+    return best_score, best_model, snli_ve_train_dataloader.dataset
 
-def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
+def eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter):
 
     model.eval()
-    eval_score = 0
+    eval_correct = 0
 
-    for step, batch in enumerate(tqdm(vqa_val_dataloader, desc='Evaluating on VQA val set')):
+    for step, batch in enumerate(tqdm(snli_ve_dev_dataloader, desc='Evaluating on SNLI-VE dev set')):
         inputs = batch2inputs_converter(batch)
-        target = batch['target_scores'].to(device)
+        labels = batch['labels'].to(device)
 
         #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
         with torch.no_grad():
-            output = model(task_key='vqa', **inputs)
+            output = model(task_key='snli-ve', **inputs)
         logits = output[1]
 
-        answer_scores = compute_score_with_logits(logits, target, device)
-        batch_scores = torch.sum(answer_scores, 1)
+        batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
+        eval_correct += batch_scores.sum().item()
 
-        eval_score += batch_scores.sum().item()
-
-    eval_score = eval_score/len(vqa_val_dataloader.dataset)*100.0
+    eval_acc = eval_correct/len(snli_ve_dev_dataloader.dataset)*100.0
 
     model.train()
-    return eval_score
+    return eval_acc
 
-def eval_vqa_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
+def eval_snli_ve_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
 
-    vqa_config = task_configs['vqa']
-    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
-    num_labels = vqa_config['num_labels']
+    snli_ve_config = task_configs['snli-ve']
+    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
+    num_labels = snli_ve_config['num_labels']
 
-    images_source = vqa_config['images_source']
-    mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
+    # Load Flickr30K Images dataset for image data backbone
+    images_source = snli_ve_config['images_source']
+    flickr30k_config = task_configs[images_source]
+    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
 
+    # Create model
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
 
-    vqa_val_dataloader = build_vqa_dataloader(args=args,
-                                          data_dir=data_dir,
-                                          images_dataset=images_dataset,
-                                          split='val',
-                                          tokenizer=tokenizer,
-                                          visual_mode=visual_mode)
+    snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
+                                              data_dir=data_dir,
+                                              images_dataset=images_dataset,
+                                              split='dev',
+                                              tokenizer=tokenizer,
+                                              visual_mode=visual_mode)
 
     # Load model with encoder weights from encoder_path, and classifier weights from model_path
     model.load_state_dict(torch.load(model_path))
@@ -228,19 +219,19 @@ def eval_vqa_forgetting(args, model, model_path, task_configs, model_config, tok
     #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
     #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
-    return eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
+    return eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter)
 
-def vqa_replay_step(model, vqa_replay_memory, task_configs, batch2inputs_converter, device):
+def snli_ve_replay_step(model, snli_ve_replay_memory, task_configs, batch2inputs_converter, device):
 
-    vqa_config = task_configs['vqa']
+    snli_ve_config = task_configs['snli-ve']
     # Training hyperparameters
-    num_epochs = vqa_config['num_epochs']
-    lr = vqa_config['lr']
-    adam_epsilon = vqa_config['adam_epsilon']
-    weight_decay = vqa_config['weight_decay']
+    num_epochs = snli_ve_config['num_epochs']
+    lr = snli_ve_config['lr']
+    adam_epsilon = snli_ve_config['adam_epsilon']
+    weight_decay = snli_ve_config['weight_decay']
 
     # Create optimizer
-    loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
+    loss_criterion = nn.CrossEntropyLoss(reduction='mean')
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
@@ -249,19 +240,19 @@ def vqa_replay_step(model, vqa_replay_memory, task_configs, batch2inputs_convert
     # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
     optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
     
-    replay_batch = vqa_replay_memory.sample_memory_batch()
+    replay_batch = snli_ve_replay_memory.sample_memory_batch()
     inputs = batch2inputs_converter(replay_batch)
-    target = replay_batch['target_scores'].to(device)
+    labels = replay_batch['labels'].to(device)
 
     #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-    output = model(task_key='vqa', **inputs)
+    output = model(task_key='snli-ve', **inputs)
     logits = output[1]
     # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
-    loss = loss_criterion(logits, target) * target.shape[1]
+    loss = loss_criterion(logits, labels)
 
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
-    wandb.log({'vqa': {'loss': loss.item()}})
+    wandb.log({'snli-ve': {'loss': loss.item()}})
 
     return loss.item()

@@ -33,11 +33,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 #os.environ["WANDB_START_METHOD"] = "thread"
 #wandb.init(project='language')
 
+logging.basicConfig()
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-        datefmt='%m/%d/%Y %H:%M:%S',
-        level=logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 def train_language(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
@@ -61,18 +59,16 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels)
 
-    #'''
+    '''
     # load the ckpt of upstream tasks
     path = '/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve/checkpoints/task2_snli-ve/model'
-    if 'nlvr' in path:
-        model.vilt_encoder.expand_modality_type_embeddings(type_vocab_size=3)
     ckpt_dict = torch.load(path)
     model_dict = model.state_dict()
     for k in ckpt_dict.keys():
         if 'clf_layer' and 'task_layer' not in k:
             model_dict[k] = ckpt_dict[k].clone()
     model.load_state_dict(model_dict)
-    #'''
+    '''
 
     if max_len > 40:
         img_sz = 128

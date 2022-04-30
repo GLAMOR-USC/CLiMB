@@ -22,8 +22,6 @@ import wandb
 
 from transformers import BertTokenizer
 
-from modeling import load_encoder_map
-
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from utils.seed_utils import set_seed
@@ -63,11 +61,10 @@ def forward_transfer_eval(args, results_file):
     return forward_transfer_dict
 
 
-def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device):
+def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
 
     model_config = model_configs[args.encoder_name]
     batch2inputs_converter = model_config['batch2inputs_converter']
-    classifier_class = model_config['classifier_class']
 
     cl_results = json.load(open(results_file))
     assert len(cl_results) == len(args.ordered_cl_tasks)
@@ -80,25 +77,24 @@ def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
         task_name = task_configs[task_key]['task_name']
         if task_num < 1:
             continue
-        logger.info("Evaluating {} encoder after training on {}, on previously-seen tasks {}".format(args.encoder_name,
+        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_configs[args.encoder_name],
                                                                                                      task_name,
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
-        encoder_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'encoder')
+        model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'model')
 
         # Go from all previous tasks from {0, ..., task_num-1}
         for prev_task_num in range(task_num):
 
             prev_task_key = args.ordered_cl_tasks[prev_task_num]
             # Get model path of prev_task_key
-            model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(prev_task_num, prev_task_key), 'model')
 
             prev_task_config = task_configs[prev_task_key]
             prev_task_name = prev_task_config['task_name']
 
             # Get evaluation score on prev_task
             eval_forgetting_method = prev_task_config['eval_forgetting_method']
-            eval_score = eval_forgetting_method(args, encoder, model_path, encoder_path, task_configs, model_config, tokenizer, device)
-            logger.info("Evaluation score of {} model on {}, after training on {}: {:.2f}".format(args.encoder_name,
+            eval_score = eval_forgetting_method(args, model, model_path, task_configs, model_config, tokenizer, device)
+            logger.info("Evaluation score of {} model on {}, using checkpoint after {} training: {:.2f}".format(args.encoder_name,
                                                                                                   prev_task_name,
                                                                                                   task_name,
                                                                                                   eval_score))
@@ -106,7 +102,7 @@ def catastrophic_forgetting_eval(args, results_file, encoder, tokenizer, device)
             assert prev_task_results['task_key'] == prev_task_key
             baseline_score = prev_task_results['best_score']
             forgetting_perc = 100.0*(eval_score - baseline_score)/baseline_score
-            logger.info("Forgetting on {}, trained on {} = {:.2f}%".format(prev_task_name, task_name, forgetting_perc))
+            logger.info("Forgetting of {}, after training on {} = {:.2f}%".format(prev_task_name, task_name, forgetting_perc))
             catastrophic_forgetting_dict[task_key][prev_task_key] = forgetting_perc
 
     return catastrophic_forgetting_dict
