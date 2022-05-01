@@ -45,12 +45,8 @@ class ImageNetDataset(Dataset):
             random.seed(2022)
             random.shuffle(cls_data)
 
-            train_cls_ds = []
-            for i, dt in enumerate(cls_data):
-                if i < n_train:
-                    train_cls_ds.append(dt)
-                else:
-                    val_dataset.append(dt)
+            train_cls_ds = cls_data[:n_train]
+            val_dataset.extend(cls_data[n_train:])
 
             if self.mode != 'train': continue
             if self.n_shot is None:
@@ -69,7 +65,7 @@ class ImageNetDataset(Dataset):
     def preprocess(self):
         dir_names = os.listdir(self.image_dir)
 
-        selected_classes = np.load(selected_fn)
+        selected_classes = np.load(self.selected_fn)
         dataset = [[] for _ in range(len(selected_classes))]
         n_imgs = 0
         for label, dir_name in enumerate(selected_classes):
@@ -103,15 +99,15 @@ def batch_collate(batch):
             'labels': torch.LongTensor(labels)}    
 
 
-def build_imagenet_dataloader(args, img_dir, selected_fn, split, n_shot=None, subsampled_seed=None):
+def get_data_loader(args, img_dir, selected_fn, split, n_shot=None, subsampled_seed=None):
     logger.info(f"Creating ImageNet {split} dataloader")
 
     dataset = ImageNetDataset(img_dir, selected_fn, split, n_shot, subsampled_seed)
-    pdb.set_trace()
+    batch_size = args.batch_size if split == 'train' else 128
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers = args.num_workers,
-        batch_size = args.batch_size,
+        batch_size = batch_size,
         shuffle = (split=='train'),
         collate_fn = lambda x: batch_collate(x)
         )
@@ -130,7 +126,7 @@ if __name__ == '__main__':
             self.num_workers = 0
 
     args = Args()
-    dataloader = build_imagenet_dataloader(args, img_dir, selected_fn, 'train', n_shot=64, subsampled_seed=20)
+    dataloader = get_data_loader(args, img_dir, selected_fn, 'train', n_shot=64, subsampled_seed=20)
     for batch in tqdm(dataloader):
         print(batch['raw_texts'])
         print(batch['images'])

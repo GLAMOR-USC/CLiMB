@@ -167,6 +167,21 @@ piqa_config = {
         'warmup_ratio': 0.1,
 }
 
+
+imagenet_config = {
+        'task_name': 'imagenet',
+        'data_dir': '/data/datasets/MCL/ILSVRC2012/train_256',
+        'selected_fn': '/data/datasets/MCL/coco_imagenet_shared_objects.npy',
+        'splits': ['train', 'val'],
+        'num_labels': 18,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 4e-5,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+}
+
 task_configs = {
     'ms-coco': mscoco_config,
     'flickr30k': flickr_config,
@@ -178,5 +193,6 @@ task_configs = {
     'sst2': sst2_config,
     'hellaswag': hellaswag_config,
     'piqa': piqa_config,
-    'commonsenseqa': commonsenseqa_config
+    'commonsenseqa': commonsenseqa_config,
+    'imagenet': imagenet_config
 }

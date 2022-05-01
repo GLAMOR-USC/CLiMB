@@ -183,6 +183,28 @@ class ViltContinualLearner(nn.Module):
         return self.vilt_encoder
 
 
+class ViltForImageClassification(nn.Module):
+
+    def __init__(self, encoder, encoder_dim, num_labels):
+
+        super().__init__()
+        self.encoder_dim = encoder_dim
+        self.vilt_encoder = encoder
+        self.clf_layer = nn.Sequential(
+                            nn.Linear(encoder_dim, encoder_dim*2),
+                            nn.LayerNorm(encoder_dim*2),
+                            nn.GELU(),
+                            nn.Linear(encoder_dim*2, num_labels)
+                        )
+
+    def forward(self, images, texts):
+        encodings = self.vilt_encoder.process_inputs(images, texts)
+        encoder_output = self.vilt_encoder(**encodings)
+
+        output_logits = self.clf_layer(encoder_output)
+        return output_logits
+
+
 class ViltForSequenceClassification(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):

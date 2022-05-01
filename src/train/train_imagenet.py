@@ -23,7 +23,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 from transformers import BertTokenizer
 
-from data.language_datasets.text_dataset import get_data_loader
+from data.image_datasets.imagenet_dataset import get_data_loader
 from modeling import load_encoder_map
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs
@@ -41,14 +41,10 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
-    max_len = task_config['max_len']
+    selected_fn = task_config['selected_fn']
     n_shot = args.num_shot
     subsample_seed = args.subsample_seed
     output_dir = args.output_dir
-
-    # load the pre-computed mean image
-    image_fn = "coco_mean_image.png"
-    mean_image = Image.open(image_fn)
 
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
@@ -70,30 +66,22 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     model.load_state_dict(model_dict)
     '''
 
-    if max_len > 40:
-        img_sz = 128
-        mean_image = mean_image.resize((img_sz, img_sz))
-        pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
-        model.vilt_encoder.reallocate_text_image(pt_pos_emb, max_len, img_sz)
-
     model.to(device)
 
     # Create dataloaders for training and validation
-    train_dataloader = get_data_loader(tokenizer, 
-        task_name=task_name, 
-        split='train', 
-        max_len=max_len, 
-        batch_size=args.batch_size, 
-        data_dir=data_dir,
-        n_shot=n_shot,
-        seed=subsample_seed)
+    train_dataloader = get_data_loader(
+        args,
+        data_dir,
+        selected_fn,
+        'train', 
+        n_shot,
+        subsample_seed)
 
-    val_dataloader = get_data_loader(tokenizer, 
-        task_name=task_name, 
-        split='val', 
-        max_len=max_len, 
-        batch_size=args.batch_size*4,
-        data_dir=data_dir)
+    val_dataloader = get_data_loader(
+        args,
+        data_dir,
+        selected_fn,
+        'val') 
 
     # Training hyperparameters
     num_epochs = task_config['num_epochs']
@@ -129,11 +117,11 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     for epoch in range(num_epochs):
         # Training loop for epoch
         for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch+1))):
-            target = batch[-1].to(device)
-            inputs = batch2inputs_converter(batch, mean_image)
+            labels = batch['labels'].to(device)
+            inputs = batch2inputs_converter(batch)
 
             logits = model(**inputs)
-            loss = loss_criterion(logits, target)
+            loss = loss_criterion(logits, labels)
 
             loss.backward()
             optimizer.step()
@@ -144,7 +132,7 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
                 print('loss:', loss.item())
 
         # Do evaluation after epoch
-        eval_score = eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter)
+        eval_score = eval(args, model, val_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
 
         if eval_score > best_score:
@@ -152,14 +140,14 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             best_score = eval_score
             best_epoch = epoch+1
 
-    write_results(n_shot, subsample_seed, best_score, task_name, max_len, output_dir)
+    write_results(n_shot, subsample_seed, best_score, task_name, output_dir)
     return best_score, best_epoch
 
 
-def write_results(n_shot, subsample_seed, best_score, task_name, max_len, output_dir):
+def write_results(n_shot, subsample_seed, best_score, task_name, output_dir):
     tree = lambda: defaultdict(tree)
     all_scores = tree()
-    out_fn = os.path.join(output_dir, f'{task_name}_results-{max_len}.json')
+    out_fn = os.path.join(output_dir, f'{task_name}_results.json')
     # load previous results
     if os.path.exists(out_fn):
         with open(out_fn, "r") as f:
@@ -172,13 +160,13 @@ def write_results(n_shot, subsample_seed, best_score, task_name, max_len, output
         outfile.write(json.dumps(all_scores))
 
 
-def eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter):
+def eval(args, model, val_dataloader, device, batch2inputs_converter):
 
     model.eval()
     eval_score = 0
     for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on val set')):
-        labels = batch[-1]
-        inputs = batch2inputs_converter(batch, mean_image)
+        labels = batch['labels']
+        inputs = batch2inputs_converter(batch)
         with torch.no_grad():
             logits = model(**inputs)
 
@@ -198,11 +186,12 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--task_name", default=None, type=str, required=True, choices=['imdb', 'sst2', 'hellaswag', 'piqa', 'commonsenseqa'],
+    parser.add_argument("--task_name", default=None, type=str, required=True, choices=['imagenet'],
                         help="The name of the language-only task.")
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
-    parser.add_argument("--model_catog", default='vilt-vl', type=str, choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc'],
+    parser.add_argument("--model_catog", default='vilt-v-cls', type=str, 
+                        choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc', 'vilt-v-cls'],
                         help="The catogory for model class.")
     parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
                         help="Name of pretrained model weights to load.")
