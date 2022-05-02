@@ -31,6 +31,14 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
+GENDER_NEUTRAL_NAMES = ['Casey', 'Riley', 'Jessie', 'Jackie', 'Avery', 'Jaime', 'Peyton', 'Kerry', 'Jody', 'Kendall',
+                        'Skyler', 'Frankie', 'Pat', 'Quinn', 'Morgan', 'Finley', 'Harley', 'Robbie', 'Sidney', 'Tommie',
+                        'Ashley', 'Carter', 'Adrian', 'Clarke', 'Logan', 'Mickey', 'Nicky', 'Parker', 'Tyler',
+                        'Reese', 'Charlie', 'Austin', 'Denver', 'Emerson', 'Tatum', 'Dallas', 'Haven', 'Jordan',
+                        'Robin', 'Rory', 'Bellamy', 'Salem', 'Sutton', 'Gray', 'Shae', 'Kyle', 'Alex', 'Ryan',
+                        'Cameron', 'Dakota']
+
+
 def process_list(mytext, objects):
     ## Read file with the name of the color per object
     #file = open('colors.txt', 'r')  #lst_colors = file.readlines() #file.close()
@@ -44,12 +52,14 @@ def process_list(mytext, objects):
         if(type(element) == list):     #### If it's a list we need to process each object 
             for subelement in element:
                 if(objects[int(subelement)] == 'person'):
-                    temporal_text =  'the ' + str(lst_colors[int(subelement)]).strip() #+ ' ' + str(objects[int(subelement)])
+                    #temporal_text =  'the ' + str(lst_colors[int(subelement)]).strip() #+ ' ' + str(objects[int(subelement)])
+                    temporal_text = GENDER_NEUTRAL_NAMES[int(subelement)]
                 else:
                     temporal_text = 'the gray ' + str(objects[int(subelement)]).strip()
         elif(type(element) == int):
             if(objects[int(element)] == 'person'):
-                temporal_text = 'the ' + str(lst_colors[int(element)]).strip() #+ ' ' + str(objects[int(element)])
+                #temporal_text = 'the ' + str(lst_colors[int(element)]).strip() #+ ' ' + str(objects[int(element)])
+                temporal_text = GENDER_NEUTRAL_NAMES[int(subelement)]
             else:
                 temporal_text = 'the gray ' + str(objects[int(subelement)])
         else:
@@ -195,20 +205,29 @@ if __name__ == '__main__':
     #vcr.VCRDataset(data_dir, split, tokenizer, task_type='answer')
 
     vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer')
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer')
-
-    print(len(vcr_train_dataloader))
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer')
 
     vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale')
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale')
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale')
 
-    print(len(vcr_train_dataloader))
-
-    for batch in tqdm(vcr_train_dataloader):
-            print(batch['texts'])
-            print(batch['images'])
-            print(batch['labels'])
-            pdb.set_trace() 
+    #max_token_len = 0
+    #len_over_40 = 0
+    #total = 0
+    #for batch in tqdm(vcr_val_dataloader):
+    #        #print(batch['texts'])
+    #        #print(batch['images'])
+    #        #print(batch['labels'])
+    #        for answer_set in batch['texts']:
+    #            for choice in answer_set:
+    #                tokens = tokenizer.tokenize(choice)
+    #                ids = tokenizer.convert_tokens_to_ids(tokens)
+    #                if len(ids) >= 40:
+    #                    len_over_40 += 1
+    #                max_token_len = max(max_token_len, len(ids))
+    #                total += 1
+    #        #pdb.set_trace() 
+    #print("Percent of samples with > 40 token len: {:.4f}%".format(100.0*len_over_40/total))
+    #print("Maximum length = {}".format(max_token_len))
 
 
 #main()
