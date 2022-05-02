@@ -31,13 +31,13 @@ from utils.seed_utils import set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 #os.environ["WANDB_START_METHOD"] = "thread"
-#wandb.init(project='language')
+#wandb.init(project='vision')
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-def train_language(args, encoder, task_config, model_config, tokenizer, device):
+def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
@@ -187,7 +187,7 @@ def main():
 
     ## Required parameters
     parser.add_argument("--task_name", default=None, type=str, required=True, choices=['imagenet'],
-                        help="The name of the language-only task.")
+                        help="The name of the vision-only task.")
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
     parser.add_argument("--model_catog", default='vilt-v-cls', type=str, 
@@ -242,12 +242,12 @@ def main():
 
     results = []
     logger.info("-"*100)
-    logger.info("Training models on downstream language-only tasks...")
+    logger.info("Training models on downstream vision-only tasks...")
 
     # Load the correct training method for current CL task, and call the training method
     task_config = task_configs[args.task_name]
     logger.info("-"*100)
-    best_eval_score, best_epoch = train_language(args, encoder, task_config, model_config, tokenizer, device)
+    best_eval_score, best_epoch = train_vision(args, encoder, task_config, model_config, tokenizer, device)
     logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(args.task_name, best_eval_score, best_epoch))
 
 if __name__ == '__main__':
