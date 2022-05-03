@@ -78,6 +78,7 @@ class VCRDataset(Dataset):
         self.image_dir = os.path.join(data_dir, 'vcr')
         self.split = split
         self.tokenizer = tokenizer
+        self.task_type = task_type
         #self.visual_mode = visual_mode
 
         self.annotations_file = os.path.join(data_dir, 'annotation/{}.jsonl'.format(split))
@@ -133,7 +134,7 @@ class VCRDataset(Dataset):
                 
             pkl.dump(self.data, open(self.cached_data_file, 'wb'))
         self.n_examples = len(self.data)
-        logger.info("Loaded VCR {} dataset, with {} examples".format(self.split, len(self.data)))
+        logger.info("Loaded VCR-{} {} dataset, with {} examples".format(self.task_type, self.split, len(self.data)))
 
     def __len__(self):
         return self.n_examples
@@ -156,16 +157,16 @@ class VCRDataset(Dataset):
 def vcr_batch_collate(batch):
     
     texts, pil_objs, labels = zip(*batch)
-    return {'texts': list(texts), 
-            'images': pil_objs, 
+    return {'raw_texts': list(texts),
+            'images': list(pil_objs),
             'labels': torch.LongTensor(labels)}
 
 def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type):
     
-    batch_size = args.batch_size
+    batch_size = int(args.batch_size/4)
     shuffle = True if split == 'train' else False
 
-    logger.info("Creating vcr {} dataloader with batch size of {}".format(split, batch_size))
+    logger.info("Creating VCR {} dataloader with batch size of {}".format(split, batch_size))
 
     dataset = VCRDataset(data_dir, split, tokenizer, task_type)
     
