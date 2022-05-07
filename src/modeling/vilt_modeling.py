@@ -133,12 +133,15 @@ class ViltContinualLearner(nn.Module):
             self.task_layer_dict[task_key] = clf_layer
 
         elif task_config['model_type'] == 'multi-choice':
-            num_choices = task_config['num_choices']
+            #clf_layer = nn.Sequential(
+            #                nn.Linear(self.encoder_dim, self.encoder_dim*2),
+            #                nn.LayerNorm(self.encoder_dim*2),
+            #                nn.GELU(),
+            #                nn.Linear(self.encoder_dim*2, 1)
+            #            )
             clf_layer = nn.Sequential(
-                            nn.Linear(self.encoder_dim*num_choices, self.encoder_dim*2),
-                            nn.LayerNorm(self.encoder_dim*2),
-                            nn.GELU(),
-                            nn.Linear(self.encoder_dim*2, num_labels)
+                            nn.Dropout(0.1),
+                            nn.Linear(self.encoder_dim, 1)
                         )
             self.task_layer_dict[task_key] = clf_layer
 
@@ -218,10 +221,11 @@ class ViltContinualLearner(nn.Module):
             }
             pooled_out = self.vilt_encoder(**encodings)
             pooler_outputs.append(pooled_out)
-        pooled_output = torch.cat(pooler_outputs, dim=-1) # [bs, 1536]
+        #pooled_output = torch.cat(pooler_outputs, dim=-1) # [bs, 1536]
+        pooled_output = torch.stack(pooler_outputs, dim=0).transpose(0, 1)
 
         #reshape_output = encoder_output.view(self.num_labels, -1, self.encoder_dim).transpose(0, 1).contiguous()
-        output_logits = self.task_layer[task_key](pooled_output)
+        output_logits = self.task_layer[task_key](pooled_output).squeeze()
         return pooled_output, output_logits
 
     def get_encoder(self):
