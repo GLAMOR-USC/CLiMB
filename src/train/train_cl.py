@@ -115,7 +115,7 @@ def main():
 
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
-    parser.add_argument("--wandb_project_name", type=str, default="vl-cl",
+    parser.add_argument("--wandb_project_name", type=str, default="climb-cl",
                         help="Name of W&B project where experiments are logged.")
 
     parser.add_argument("--batch_size", type=int, default=32,
@@ -186,7 +186,7 @@ def main():
         logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
         wandb.init(project=args.wandb_project_name,
             name=experiment_name,
-            entity='tejas1995',
+            entity='las-cl',
             reinit=True)
 
         results = []
