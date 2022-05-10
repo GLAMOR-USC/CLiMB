@@ -24,6 +24,7 @@ from transformers import BertTokenizer
 
 from modeling import load_encoder_map, continual_learner_map
 
+from cl_algorithms import ExperienceReplayMemory
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
@@ -35,47 +36,6 @@ tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu")
 #device = torch.device("cpu")
-
-# Not sure where this class belongs, should I create a new file? putting it here for now
-class ReplayMemoryBuffer:
-
-    def __init__(self, args, task_key, task_config, train_dataset, memory_percentage, sampling_strategy):
-
-        self.task_key = task_key
-        self.task_name = task_config['task_name']
-        self.batch_collate_fn = task_config['batch_collate_fn']
-
-        self.dataset = train_dataset
-        if task_key == 'nlvr2':
-            self.batch_size = int(args.batch_size/2)
-        else:
-            self.batch_size = args.batch_size
-        self.visual_mode = args.visual_mode
-
-        self.memory_percentage = memory_percentage                      # Percent of training samples to store in memory
-        assert self.memory_percentage < 1.0
-        self.memory_size = int(memory_percentage*len(self.dataset))     # Number of training samples that are stored in memory
-        self.sampling_strategy = sampling_strategy
-        assert sampling_strategy in ['random']                      # Only random sampling for memory buffer implemented so far
-
-        if self.sampling_strategy == 'random':
-            train_idxs = list(range(len(self.dataset)))
-            self.memory_idxs = random.sample(train_idxs, self.memory_size)
-
-        elif self.sampling_strategy == 'random-balanced':
-            raise NotImplementedError("Label-balanced sampling of replay memory is not yet implemented!")
-
-        logger.info("Created {} replay memory buffer, with {} samples in the memory".format(self.task_name, len(self.memory_idxs)))
-
-    def __len__(self):
-        return len(self.memory_idxs)
-
-    def sample_memory_batch(self):
-
-        sampled_instances = random.sample(self.memory_idxs, self.batch_size)
-        batch = self.batch_collate_fn([self.dataset[i] for i in sampled_instances], self.visual_mode)
-        return batch
-
 
 def main():
 
@@ -167,9 +127,9 @@ def main():
 
         results = []
         if args.cl_algorithm == 'experience_replay':
-            memory_buffers = {}
+            replay_memory = ExperienceReplayMemory()
         else:
-            memory_buffers = None
+            replay_memory = None
 
         logger.info("-"*100)
         logger.info("Training models on Vision-Language continual learning tasks...")
@@ -191,7 +151,7 @@ def main():
                 logger.info("-"*100)
                 logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
                 train_method = task_configs[task_key]['train_method']
-                best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, memory_buffers)
+                best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, replay_memory)
 
                 logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
@@ -216,14 +176,12 @@ def main():
                 logger.info("Saved continual learning results so far!")
 
             if args.cl_algorithm == 'experience_replay':
-                task_replay_memory = ReplayMemoryBuffer(args=args,
-                                                        task_key=task_key,
-                                                        task_config=task_configs[task_key],
-                                                        train_dataset=task_train_dataset,
-                                                        memory_percentage=args.memory_percentage,
-                                                        sampling_strategy=args.memory_sampling_strategy)
-                #replay_batch = task_replay_memory.sample_memory_batch()
-                memory_buffers[task_key] = task_replay_memory
+                replay_memory.add_task_memory_buffer(args=args,
+                                                     task_key=task_key,
+                                                     task_config=task_configs[task_key],
+                                                     train_dataset=task_train_dataset,
+                                                     memory_percentage=args.memory_percentage,
+                                                     sampling_strategy=args.memory_sampling_strategy)
 
     if args.do_eval:
 
