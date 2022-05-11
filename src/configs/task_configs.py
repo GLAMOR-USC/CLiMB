@@ -1,14 +1,16 @@
-from train.train_vqa import train_vqa, eval_vqa_forgetting, vqa_replay_step, get_vqa_train_dataset
-from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, nlvr2_replay_step, get_nlvr2_train_dataset
-from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, snli_ve_replay_step, get_snli_ve_train_dataset
+from train.train_vqa import train_vqa, eval_vqa_forgetting, get_vqa_train_dataset
+from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, get_nlvr2_train_dataset
+from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, get_snli_ve_train_dataset
+from train.train_vcr import train_vcr, eval_vcr_forgetting, get_vcr_train_dataset
 
 from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
 from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
 from data.visionlanguage_datasets.snli_ve_dataset import snlive_batch_collate
+from data.visionlanguage_datasets.vcr_dataset import vcr_batch_collate
 
 from train.train_mscoco_detection import train_mscoco_detection
 
-SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve']
+SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve', 'vcr']
 
 mscoco_config = {
         'data_dir': 'ms-coco/',
@@ -49,7 +51,6 @@ vqa_config = {
         'train_method': train_vqa,
         'eval_forgetting_method': eval_vqa_forgetting,
         'batch_collate_fn': vqa_batch_collate,
-        'replay_step_method': vqa_replay_step,
         'get_train_dataset_method': get_vqa_train_dataset,
         'random_baseline_score': 0.0
 }
@@ -69,7 +70,6 @@ nlvr_config = {
         'train_method': train_nlvr2,
         'eval_forgetting_method': eval_nlvr2_forgetting,
         'batch_collate_fn': nlvr2_batch_collate,
-        'replay_step_method': nlvr2_replay_step,
         'get_train_dataset_method': get_nlvr2_train_dataset,
         'random_baseline_score': 50.0
 }
@@ -90,9 +90,28 @@ snli_ve_config = {
         'train_method': train_snli_ve,
         'eval_forgetting_method': eval_snli_ve_forgetting,
         'batch_collate_fn': snlive_batch_collate,
-        'replay_step_method': snli_ve_replay_step,
         'get_train_dataset_method': get_snli_ve_train_dataset,
         'random_baseline_score': 33.33
+}
+
+vcr_config = {
+        'task_name': 'VCR',
+        'data_dir': 'vcr/',
+        'splits': ['train', 'dev', 'test'],
+        'num_labels': 4,
+        'num_images': 1,
+        'model_type': 'multi-choice',
+        'task_type': 'answer',
+        'num_choices': 4,
+        'num_epochs': 10,
+        'lr': 1e-4,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'train_method': train_vcr,
+        'eval_forgetting_method': eval_vcr_forgetting,
+        'batch_collate_fn': vcr_batch_collate,
+        'get_train_dataset_method': get_vcr_train_dataset,
 }
 
 imdb_config = {
@@ -192,6 +211,7 @@ task_configs = {
     'nlvr2': nlvr_config,
     'ms-coco_detection': mscoco_detection_config,
     'snli-ve': snli_ve_config,
+    'vcr': vcr_config,
     'imdb': imdb_config,
     'sst2': sst2_config,
     'hellaswag': hellaswag_config,
