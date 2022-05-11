@@ -108,7 +108,6 @@ vcr_config = {
         'train_method': train_vcr,
         'eval_forgetting_method': eval_vcr_forgetting,
         'batch_collate_fn': vcr_batch_collate,
-        'replay_step_method': vcr_replay_step,
         'get_train_dataset_method': get_vcr_train_dataset,
 }
 

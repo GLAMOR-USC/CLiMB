@@ -154,14 +154,16 @@ class VCRDataset(Dataset):
 
         return  text, image, label
 
-def vcr_batch_collate(batch):
+def vcr_batch_collate(batch, visual_mode):
     
-    texts, pil_objs, labels = zip(*batch)
+    if visual_mode == 'pil-image':
+        texts, pil_objs, labels = zip(*batch)
+
     return {'raw_texts': list(texts),
             'images': list(pil_objs),
             'labels': torch.LongTensor(labels)}
 
-def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type):
+def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type, visual_mode):
     
     batch_size = int(args.batch_size/4)
     shuffle = True if split == 'train' else False
@@ -181,7 +183,7 @@ def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type):
         num_workers=args.num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=lambda x: vcr_batch_collate(x))
+        collate_fn=lambda x: vcr_batch_collate(x, visual_mode))
     return dataloader
 
 

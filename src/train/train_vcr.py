@@ -36,16 +36,18 @@ def get_vcr_train_dataset(args, task_configs, model_config, tokenizer):
     vcr_config = task_configs['vcr']
     data_dir = os.path.join(args.mcl_data_dir, vcr_config['data_dir'])
     task_type = vcr_config['task_type']
+    visual_mode = model_config['visual_mode']
 
     # Create dataloaders for training and validation
     vcr_train_dataloader = build_vcr_dataloader(args=args,
                                                 data_dir=data_dir,
                                                 split='train',
                                                 tokenizer=tokenizer,
-                                                task_type=task_type)
+                                                task_type=task_type,
+                                                visual_mode=visual_mode)
     return vcr_train_dataloader.dataset
 
-def train_vcr(args, model, task_configs, model_config, tokenizer, device, memory_buffers=None):
+def train_vcr(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
 
     vcr_config = task_configs['vcr']
     data_dir = os.path.join(args.mcl_data_dir, vcr_config['data_dir'])
@@ -64,13 +66,15 @@ def train_vcr(args, model, task_configs, model_config, tokenizer, device, memory
                                                 data_dir=data_dir,
                                                 split='train',
                                                 tokenizer=tokenizer,
-                                                task_type=task_type)
+                                                task_type=task_type,
+                                                visual_mode=visual_mode)
 
     vcr_val_dataloader = build_vcr_dataloader(args=args,
                                               data_dir=data_dir,
                                               split='val',
                                               tokenizer=tokenizer,
-                                              task_type=task_type)
+                                              task_type=task_type,
+                                              visual_mode=visual_mode)
 
     # Training hyperparameters
     num_epochs = vcr_config['num_epochs']
@@ -100,9 +104,8 @@ def train_vcr(args, model, task_configs, model_config, tokenizer, device, memory
     )
 
     if args.cl_algorithm == 'experience_replay':
-        assert memory_buffers is not None
-        previous_tasks = list(memory_buffers.keys())
-        do_replay = True if len(previous_tasks) > 0 else False
+        assert replay_memory is not None
+        do_replay = replay_memory.do_replay()
 
     best_score = 0
     best_model = {
@@ -138,10 +141,13 @@ def train_vcr(args, model, task_configs, model_config, tokenizer, device, memory
 
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
-                    sampled_previous_task = random.choice(previous_tasks)
-                    replay_step_method = task_configs[sampled_previous_task]['replay_step_method']
-                    replay_loss = replay_step_method(model, memory_buffers[sampled_previous_task], task_configs, batch2inputs_converter, device)
-                    logger.info("{} replay step: loss = {:.5f}".format(task_configs[sampled_previous_task]['task_name'], replay_loss))
+                    sampled_replay_task = replay_memory.sample_replay_task()
+                    replay_args = {'model': model,
+                                   'task_configs': task_configs,
+                                   'batch2inputs_converter': batch2inputs_converter,
+                                   'device': device}
+                    replay_loss = replay_memory.run_replay_step(sampled_replay_task, **replay_args)
+                    logger.info("{} replay step: loss = {:.5f}".format(task_configs[sampled_replay_task]['task_name'], replay_loss))
 
         # Do evaluation after epoch
         eval_score = eval_vcr(args, model, vcr_val_dataloader, device, batch2inputs_converter)
@@ -194,7 +200,8 @@ def eval_vcr_forgetting(args, model, model_path, task_configs, model_config, tok
                                               data_dir=data_dir,
                                               split='val',
                                               tokenizer=tokenizer,
-                                              task_type=task_type)
+                                              task_type=task_type,
+                                              visual_mode=visual_mode)
 
     # Load model with encoder weights from encoder_path, and classifier weights from model_path
     model.load_state_dict(torch.load(model_path))
@@ -209,38 +216,3 @@ def eval_vcr_forgetting(args, model, model_path, task_configs, model_config, tok
     #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
     return eval_vcr(args, model, vcr_val_dataloader, device, batch2inputs_converter)
-
-def vcr_replay_step(model, vcr_replay_memory, task_configs, batch2inputs_converter, device):
-
-    vcr_config = task_configs['vcr']
-    # Training hyperparameters
-    num_epochs = vcr_config['num_epochs']
-    lr = vcr_config['lr']
-    adam_epsilon = vcr_config['adam_epsilon']
-    weight_decay = vcr_config['weight_decay']
-
-    # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss()
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
-    
-    replay_batch = vcr_replay_memory.sample_memory_batch()
-    inputs = batch2inputs_converter(replay_batch)
-    target = replay_batch['labels'].to(device)
-
-    #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-    output = model(task_key='vcr', **inputs)
-    logits = output[1]
-    loss = loss_criterion(logits, target)
-
-    loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
-    wandb.log({'vcr': {'loss': loss.item()}})
-
-    return loss.item()
