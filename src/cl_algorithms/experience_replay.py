@@ -114,10 +114,46 @@ def snli_ve_replay_step(model, replay_memory, task_configs, batch2inputs_convert
 
     return loss.item()
 
+def vcr_replay_step(model, replay_memory, task_configs, batch2inputs_converter, device):
+
+    vcr_config = task_configs['vcr']
+    # Training hyperparameters
+    num_epochs = vcr_config['num_epochs']
+    lr = vcr_config['lr']
+    adam_epsilon = vcr_config['adam_epsilon']
+    weight_decay = vcr_config['weight_decay']
+
+    # Create optimizer
+    loss_criterion = nn.CrossEntropyLoss()
+    no_decay = ['bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
+    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
+
+    replay_batch = replay_memory.sample_replay_batch('vcr')
+    inputs = batch2inputs_converter(replay_batch)
+    target = replay_batch['labels'].to(device)
+
+    #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
+    output = model(task_key='vcr', **inputs)
+    logits = output[1]
+    loss = loss_criterion(logits, target)
+
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    wandb.log({'vcr': {'loss': loss.item()}})
+
+    return loss.item()
+
 
 REPLAY_STEP_METHOD_MAP = {'vqa': vqa_replay_step,
                           'nlvr2': nlvr2_replay_step,
-                          'snli-ve': snli_ve_replay_step   
+                          'snli-ve': snli_ve_replay_step,
+                          'vcr': vcr_replay_step,
                         }
 
 class ExperienceReplayMemory:
