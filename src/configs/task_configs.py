@@ -112,6 +112,7 @@ vcr_config = {
         'eval_forgetting_method': eval_vcr_forgetting,
         'batch_collate_fn': vcr_batch_collate,
         'get_train_dataset_method': get_vcr_train_dataset,
+        'random_baseline_score': 25.0
 }
 
 imdb_config = {
