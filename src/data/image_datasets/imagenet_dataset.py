@@ -63,18 +63,16 @@ class ImageNetDataset(Dataset):
             
 
     def preprocess(self):
-        dir_names = os.listdir(self.image_dir)
+        all_classes = os.listdir(self.image_dir)
 
-        selected_classes = np.load(self.selected_fn)
-        dataset = [[] for _ in range(len(selected_classes))]
+        dataset = [[] for _ in range(len(all_classes))]
         n_imgs = 0
-        for label, dir_name in enumerate(selected_classes):
+        for label, dir_name in enumerate(all_classes):
             filenames = glob.glob(os.path.join(self.image_dir, dir_name, '*.JPEG'))
             for fn in filenames:
                 dataset[label].append([fn, label])
                 n_imgs += 1
 
-#        print(f'# of all data: {n_imgs}')
         self.dataset = self.get_train_val_split(dataset)
         self.num_images = len(self.dataset)
         print(f'# {self.num_images} images in {self.mode} set')
