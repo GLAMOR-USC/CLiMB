@@ -50,7 +50,12 @@ def main():
                         help="Name of pretrained model weights to load.")
     parser.add_argument("--ordered_cl_tasks", type=str, required=True,
                         help="Ordered list of VL task keys for continual learning, seprated by commas.")
-    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft', 'sequential_ft', 'experience_replay', 'adapter'],
+    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft',
+                                                                            'sequential_ft',
+                                                                            'experience_replay',
+                                                                            'adapter',
+                                                                            'freeze_encoder',
+                                                                            'freeze_bottom_k_layers'],
                         help="Name of Continual Learning algorithm used.")
     parser.add_argument("--mcl_data_dir", type=str, required=True, default='/data/datasets/MCL/',
                         help="Directory where all the MCL data is stored")
@@ -73,6 +78,10 @@ def main():
     parser.add_argument("--adapter_reduction_factor", type=int, default=0,
                         help="Downsampling ratio for adapter layers")
 
+    # Arguments specific to Adapters algorithm
+    parser.add_argument("--layers_to_freeze", type=int, default=0,
+                        help="Number of layers to freeze (if freezing bottom-k layers)")
+
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
     parser.add_argument("--wandb_project_name", type=str, default="climb-cl",
@@ -92,6 +101,8 @@ def main():
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
     if args.cl_algorithm == 'adapter':
         experiment_name = '{}_{}'.format(experiment_name, args.adapter_config)
+    elif args.cl_algorithm == 'freeze_bottom_k_layers':
+        experiment_name = experiment_name.replace('_k_layers', '{}layers'.format(args.layers_to_freeze))
     for i, task_key in enumerate(args.ordered_cl_tasks):
         experiment_name = '{}-task{}_{}'.format(experiment_name, i, task_key)
     output_dir = os.path.join(args.output_dir, experiment_name)
@@ -109,6 +120,10 @@ def main():
     if args.cl_algorithm == 'experience_replay':
         assert args.memory_percentage > 0.0
         assert args.replay_frequency > 0
+    if args.cl_algorithm == 'adapter':
+        assert args.adapter_reduction_factor > 0
+    if args.cl_algorithm == 'freeze_bottom_k_layers':
+        assert args.layers_to_freeze > 0
 
 
     # Ensure all the tasks for continual learning are supported VL tasks
@@ -122,6 +137,11 @@ def main():
     continual_learner_class = continual_learner_map[args.encoder_name]
     model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
     args.visual_mode = model_config['visual_mode']
+
+    if args.cl_algorithm == 'freeze_encoder':
+        model.get_encoder().freeze_all_weights()
+    elif args.cl_algorithm == 'freeze_bottom_k_layers':
+        model.get_encoder().freeze_bottom_k_layers(k=args.layers_to_freeze)
 
     # Add Adapters for each task
     if args.cl_algorithm == 'adapter':
@@ -137,6 +157,8 @@ def main():
 
     total_params = sum(p.numel() for p in model.parameters())
     logger.info('Total Parameters: {:.2f}M'.format(total_params*10**-6))
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
+    logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
 
     if args.do_train:
 

@@ -97,6 +97,20 @@ class ViltEncoderWrapper(nn.Module):
         output = self.vilt(**encodings)
         return output.pooler_output
 
+    def freeze_all_weights(self):
+
+        for p in self.vilt.parameters():
+            p.requires_grad = False
+
+    def freeze_bottom_k_layers(self, k):
+
+        assert k < len(self.vilt.encoder.layer)
+        for p in self.vilt.embeddings.parameters():
+            p.requires_grad = False
+        for i in range(k):
+            for p in self.vilt.encoder.layer[i].parameters():
+                p.requires_grad = False
+
 
 class ViltContinualLearner(nn.Module):
 
