@@ -23,7 +23,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
-from data.visionlanguage_datasets.vqa_dataset import build_vqa_dataloader
+from data.visionlanguage_datasets.vcr_dataset import build_vcr_dataloader
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -31,75 +31,59 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def compute_score_with_logits(logits, labels, device):
-    logits = torch.max(logits, 1)[1].data # argmax
-    one_hots = torch.zeros(*labels.size()).to(device)
-    one_hots.scatter_(1, logits.view(-1, 1), 1)
-    scores = (one_hots * labels)
-    return scores
+def get_vcr_train_dataset(args, task_configs, model_config, tokenizer):
 
-def get_vqa_train_dataset(args, task_configs, model_config, tokenizer):
-
-    vqa_config = task_configs['vqa']
-    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
-
-    # Load COCO Images dataset for image data backbone
-    images_source = vqa_config['images_source']
-    mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
-
+    vcr_config = task_configs['vcr']
+    data_dir = os.path.join(args.mcl_data_dir, vcr_config['data_dir'])
+    task_type = vcr_config['task_type']
     visual_mode = model_config['visual_mode']
 
     # Create dataloaders for training and validation
-    vqa_train_dataloader = build_vqa_dataloader(args=args,
+    vcr_train_dataloader = build_vcr_dataloader(args=args,
                                                 data_dir=data_dir,
-                                                images_dataset=images_dataset,
                                                 split='train',
                                                 tokenizer=tokenizer,
+                                                task_type=task_type,
                                                 visual_mode=visual_mode)
-    return vqa_train_dataloader.dataset
+    return vcr_train_dataloader.dataset
 
-def train_vqa(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
+def train_vcr(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
 
-    vqa_config = task_configs['vqa']
-    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
-    num_labels = vqa_config['num_labels']
-
-    # Load COCO Images dataset for image data backbone
-    images_source = vqa_config['images_source']
-    mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
+    vcr_config = task_configs['vcr']
+    data_dir = os.path.join(args.mcl_data_dir, vcr_config['data_dir'])
+    num_labels = vcr_config['num_labels']
+    task_type = vcr_config['task_type']
 
     # Create model
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
     if args.cl_algorithm == 'adapter':
-        model.set_active_adapters("vqa")
+        model.set_active_adapters("vcr")
 
     # Create dataloaders for training and validation
-    vqa_train_dataloader = build_vqa_dataloader(args=args,
+    vcr_train_dataloader = build_vcr_dataloader(args=args,
                                                 data_dir=data_dir,
-                                                images_dataset=images_dataset,
                                                 split='train',
                                                 tokenizer=tokenizer,
+                                                task_type=task_type,
                                                 visual_mode=visual_mode)
 
-    vqa_val_dataloader = build_vqa_dataloader(args=args,
+    vcr_val_dataloader = build_vcr_dataloader(args=args,
                                               data_dir=data_dir,
-                                              images_dataset=images_dataset,
                                               split='val',
                                               tokenizer=tokenizer,
+                                              task_type=task_type,
                                               visual_mode=visual_mode)
 
     # Training hyperparameters
-    num_epochs = vqa_config['num_epochs']
-    lr = vqa_config['lr']
-    adam_epsilon = vqa_config['adam_epsilon']
-    weight_decay = vqa_config['weight_decay']
+    num_epochs = vcr_config['num_epochs']
+    lr = vcr_config['lr']
+    adam_epsilon = vcr_config['adam_epsilon']
+    weight_decay = vcr_config['weight_decay']
 
     # Create optimizer
-    loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
+    loss_criterion = nn.CrossEntropyLoss()
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
@@ -109,7 +93,7 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, replay
     optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
     # Create Scheduler
     # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L263
-    max_steps = len(vqa_train_dataloader) * num_epochs
+    max_steps = len(vcr_train_dataloader) * num_epochs
     warmup_ratio = 0.1 # TODO remove hard code
     scheduler = get_polynomial_decay_schedule_with_warmup(
         optimizer,
@@ -134,24 +118,26 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, replay
     model.train()
     for epoch in range(num_epochs):
         # Training loop for epoch
-        for step, batch in enumerate(tqdm(vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+        for step, batch in enumerate(tqdm(vcr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+            # Convert inputs into expected format
             inputs = batch2inputs_converter(batch)
-            target = batch['target_scores'].to(device)
+            target = batch['labels'].to(device)
 
-            #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-            output = model(task_key='vqa', **inputs)
+            # Forward pass
+            output = model(task_key='vcr', **inputs)
             logits = output[1]
-            # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
-            loss = loss_criterion(logits, target) * target.shape[1]
+            loss = loss_criterion(logits, target)
 
+            # Back propogate
             loss.backward()
 
+            # Optimizer step
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
 
             if (step + 1) % 100 == 0:
-                wandb.log({'vqa': {'loss': loss.item()}})
+                wandb.log({'vcr': {'loss': loss.item()}})
 
             if args.cl_algorithm == 'experience_replay' and do_replay is True:
                 if (step + 1) % args.replay_frequency == 0:
@@ -164,63 +150,58 @@ def train_vqa(args, model, task_configs, model_config, tokenizer, device, replay
                     logger.info("{} replay step: loss = {:.5f}".format(task_configs[sampled_replay_task]['task_name'], replay_loss))
 
         # Do evaluation after epoch
-        eval_score = eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
+        eval_score = eval_vcr(args, model, vcr_val_dataloader, device, batch2inputs_converter)
         logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-        wandb.log({'vqa': {'val_score': eval_score}})
+        wandb.log({'vcr': {'val_score': eval_score}})
         if eval_score > best_score:
             logger.info("New best evaluation score: {:.2f}".format(eval_score))
             best_score = eval_score
             best_model['epoch'] = epoch
             best_model['model'] = copy.deepcopy(model)
 
-    return best_score, best_model, vqa_train_dataloader.dataset
+    return best_score, best_model, vcr_train_dataloader.dataset
 
-def eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter):
+def eval_vcr(args, model, vcr_val_dataloader, device, batch2inputs_converter):
 
     model.eval()
-    eval_score = 0
+    eval_correct = 0
 
-    for step, batch in enumerate(tqdm(vqa_val_dataloader, desc='Evaluating on VQA val set')):
+    for step, batch in enumerate(tqdm(vcr_val_dataloader, desc='Evaluating on VQA val set')):
         inputs = batch2inputs_converter(batch)
-        target = batch['target_scores'].to(device)
+        target = batch['labels'].to(device)
 
         #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
         with torch.no_grad():
-            output = model(task_key='vqa', **inputs)
+            output = model(task_key='vcr', **inputs)
         logits = output[1]
 
-        answer_scores = compute_score_with_logits(logits, target, device)
-        batch_scores = torch.sum(answer_scores, 1)
+        batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
+        eval_correct += batch_scores.sum().item()
 
-        eval_score += batch_scores.sum().item()
-
-    eval_score = eval_score/len(vqa_val_dataloader.dataset)*100.0
+    eval_acc = eval_correct/len(vcr_val_dataloader.dataset)*100.0
 
     model.train()
-    return eval_score
+    return eval_acc
 
-def eval_vqa_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
+def eval_vcr_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
 
-    vqa_config = task_configs['vqa']
-    data_dir = os.path.join(args.mcl_data_dir, vqa_config['data_dir'])
-    num_labels = vqa_config['num_labels']
-
-    images_source = vqa_config['images_source']
-    mscoco_config = task_configs[images_source]
-    images_dataset = MSCOCOImagesDataset(os.path.join(args.mcl_data_dir, mscoco_config['data_dir']))
+    vcr_config = task_configs['vcr']
+    data_dir = os.path.join(args.mcl_data_dir, vcr_config['data_dir'])
+    num_labels = vcr_config['num_labels']
+    task_type = vcr_config['task_type']
 
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
     if args.cl_algorithm == 'adapter':
-        model.set_active_adapters("vqa")
+        model.set_active_adapters("vcr")
 
-    vqa_val_dataloader = build_vqa_dataloader(args=args,
-                                          data_dir=data_dir,
-                                          images_dataset=images_dataset,
-                                          split='val',
-                                          tokenizer=tokenizer,
-                                          visual_mode=visual_mode)
+    vcr_val_dataloader = build_vcr_dataloader(args=args,
+                                              data_dir=data_dir,
+                                              split='val',
+                                              tokenizer=tokenizer,
+                                              task_type=task_type,
+                                              visual_mode=visual_mode)
 
     # Load model with encoder weights from encoder_path, and classifier weights from model_path
     model.load_state_dict(torch.load(model_path))
@@ -234,4 +215,4 @@ def eval_vqa_forgetting(args, model, model_path, task_configs, model_config, tok
     #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
     #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
 
-    return eval_vqa(args, model, vqa_val_dataloader, device, batch2inputs_converter)
+    return eval_vcr(args, model, vcr_val_dataloader, device, batch2inputs_converter)

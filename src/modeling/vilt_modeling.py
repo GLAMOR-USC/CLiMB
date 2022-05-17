@@ -12,12 +12,14 @@ import torch.nn.functional as F
 from transformers import BertConfig, BertTokenizer, BertModel
 from transformers import ViltProcessor, ViltModel
 from transformers import BertTokenizerFast
+from transformers import logging as transformers_logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
         format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
+transformers_logging.set_verbosity_error()
 
 def debug(processor, encodings, n=4):
     from torchvision.utils import save_image
@@ -39,6 +41,9 @@ class ViltEncoderWrapper(nn.Module):
         '''
         Wrapper around Vilt model from huggingface library
         this is the class that gets saved during checkpointing for continual learning
+        args:
+        processor - instance of ViltProcessor
+        vilt - instance of ViltModel class
         '''
 
         super().__init__()
@@ -92,6 +97,20 @@ class ViltEncoderWrapper(nn.Module):
         output = self.vilt(**encodings)
         return output.pooler_output
 
+    def freeze_all_weights(self):
+
+        for p in self.vilt.parameters():
+            p.requires_grad = False
+
+    def freeze_bottom_k_layers(self, k):
+
+        assert k < len(self.vilt.encoder.layer)
+        for p in self.vilt.embeddings.parameters():
+            p.requires_grad = False
+        for i in range(k):
+            for p in self.vilt.encoder.layer[i].parameters():
+                p.requires_grad = False
+
 
 class ViltContinualLearner(nn.Module):
 
@@ -119,9 +138,9 @@ class ViltContinualLearner(nn.Module):
 
     def add_task_layer(self, task_key, task_config):
 
-        num_images = task_config['num_images']
         num_labels = task_config['num_labels']
         if task_config['model_type'] == 'classification':
+            num_images = task_config['num_images']
             clf_layer = nn.Sequential(
                             nn.Linear(self.encoder_dim*num_images, self.encoder_dim*2),
                             nn.LayerNorm(self.encoder_dim*2),
@@ -130,12 +149,29 @@ class ViltContinualLearner(nn.Module):
                         )
             self.task_layer_dict[task_key] = clf_layer
 
+        elif task_config['model_type'] == 'multi-choice':
+            #clf_layer = nn.Sequential(
+            #                nn.Linear(self.encoder_dim, self.encoder_dim*2),
+            #                nn.LayerNorm(self.encoder_dim*2),
+            #                nn.GELU(),
+            #                nn.Linear(self.encoder_dim*2, 1)
+            #            )
+            clf_layer = nn.Sequential(
+                            nn.Dropout(0.1),
+                            nn.Linear(self.encoder_dim, 1)
+                        )
+            self.task_layer_dict[task_key] = clf_layer
+
     def forward(self, task_key, images, texts):
 
-        if self.task_configs[task_key]['num_images'] == 1:
-            return self.forward_single_image(task_key, images, texts)
-        else:
-            return self.forward_multi_images(task_key, images, texts, self.task_configs[task_key]['num_images'])
+        task_config = self.task_configs[task_key]
+        if task_config['model_type'] == 'multi-choice':
+            return self.forward_multi_choice(task_key, images, texts, task_config['num_choices'])
+        elif task_config['model_type'] == 'classification':
+            if task_config['num_images'] == 1:
+                return self.forward_single_image(task_key, images, texts)
+            else:
+                return self.forward_multi_images(task_key, images, texts, task_config['num_images'])
 
     def forward_single_image(self, task_key, images, texts):
 
@@ -177,11 +213,53 @@ class ViltContinualLearner(nn.Module):
         output_logits = self.task_layer[task_key](pooled_output)
         return pooled_output, output_logits
 
+    def forward_multi_choice(self, task_key, images, texts, num_choices):
+
+        texts_list = list(itertools.chain(*texts))
+        encodings = self.vilt_encoder.process_inputs(images, texts_list)
+        bs = len(images)
+        unflat_input_ids = encodings['input_ids'].view(bs, num_choices, -1)
+        unflat_attention_mask = encodings['attention_mask'].view(bs, num_choices, -1)
+        unflat_token_type_ids = encodings['token_type_ids'].view(bs, num_choices, -1)
+        pixel_values, pixel_mask = encodings['pixel_values'], encodings['pixel_mask']
+        #encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
+        #encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
+        #pdb.set_trace()
+
+        pooler_outputs = []
+        for i in range(num_choices):
+            # Forward every choice through the model
+            encodings = {
+                'input_ids': unflat_input_ids[:, i, :],
+                'attention_mask': unflat_attention_mask[:, i, :],
+                'token_type_ids': unflat_token_type_ids[:, i, :],
+                'pixel_values': pixel_values,
+                'pixel_mask': pixel_mask
+            }
+            pooled_out = self.vilt_encoder(**encodings)
+            pooler_outputs.append(pooled_out)
+        #pooled_output = torch.cat(pooler_outputs, dim=-1) # [bs, 1536]
+        pooled_output = torch.stack(pooler_outputs, dim=0).transpose(0, 1)
+
+        #reshape_output = encoder_output.view(self.num_labels, -1, self.encoder_dim).transpose(0, 1).contiguous()
+        output_logits = self.task_layer[task_key](pooled_output).squeeze()
+        return pooled_output, output_logits
 
     def get_encoder(self):
 
         return self.vilt_encoder
 
+    def add_adapter(self, task_key, config):
+
+        self.vilt_encoder.vilt.add_adapter(task_key, config)
+
+    def train_adapter(self, task_key):
+
+        self.vilt_encoder.vilt.train_adapter(task_key)
+
+    def set_active_adapters(self, task_key):
+
+        self.vilt_encoder.vilt.set_active_adapters(task_key)
 
 class ViltForImageClassification(nn.Module):
 
@@ -289,7 +367,6 @@ class BertForMultipleChoice(nn.Module):
 
         output_logits = self.clf_layer(reshape_output).squeeze()
         return output_logits
-
 
 def load_vilt_encoder(pretrained_vilt_name, device):
 

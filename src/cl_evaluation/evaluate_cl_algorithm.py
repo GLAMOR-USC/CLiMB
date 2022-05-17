@@ -54,7 +54,9 @@ def forward_transfer_eval(args, results_file):
         singletask_score = singletask_results[0]['best_score']
 
         # Compute relative gain
-        relative_gain = 100.0*(cl_task_score - singletask_score)/singletask_score
+        random_score = task_configs[task_key]['random_baseline_score']
+        relative_gain = 100.0*(cl_task_score - singletask_score)/(singletask_score - random_score)
+        logger.info("Absolute performance on task #{}, {} = {:.2f}%".format(task_num, task_name, cl_task_score))
         logger.info("Relative Gain for task #{}, {} = {:.2f}%".format(task_num, task_name, relative_gain))
         forward_transfer_dict[task_key] = relative_gain
 
@@ -77,7 +79,7 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
         task_name = task_configs[task_key]['task_name']
         if task_num < 1:
             continue
-        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_configs[args.encoder_name],
+        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_config['encoder_name'],
                                                                                                      task_name,
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
         model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'model')
@@ -101,7 +103,8 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
             prev_task_results = cl_results[prev_task_num]
             assert prev_task_results['task_key'] == prev_task_key
             baseline_score = prev_task_results['best_score']
-            forgetting_perc = 100.0*(eval_score - baseline_score)/baseline_score
+            random_score = task_configs[prev_task_key]['random_baseline_score']
+            forgetting_perc = 100.0*(eval_score - baseline_score)/(baseline_score-random_score)
             logger.info("Forgetting of {}, after training on {} = {:.2f}%".format(prev_task_name, task_name, forgetting_perc))
             catastrophic_forgetting_dict[task_key][prev_task_key] = forgetting_perc
 
