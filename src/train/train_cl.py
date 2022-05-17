@@ -21,6 +21,7 @@ from tqdm import tqdm
 import wandb
 
 from transformers import BertTokenizer
+from transformers.adapters import AdapterConfig
 
 from modeling import load_encoder_map, continual_learner_map
 
@@ -28,6 +29,7 @@ from cl_algorithms import ExperienceReplayMemory
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
+from configs.adapter_configs import ADAPTER_MAP
 from utils.seed_utils import set_seed
 
 logger = logging.getLogger(__name__)
@@ -48,7 +50,12 @@ def main():
                         help="Name of pretrained model weights to load.")
     parser.add_argument("--ordered_cl_tasks", type=str, required=True,
                         help="Ordered list of VL task keys for continual learning, seprated by commas.")
-    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft', 'sequential_ft', 'experience_replay'],
+    parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft',
+                                                                            'sequential_ft',
+                                                                            'experience_replay',
+                                                                            'adapter',
+                                                                            'freeze_encoder',
+                                                                            'freeze_bottom_k_layers'],
                         help="Name of Continual Learning algorithm used.")
     parser.add_argument("--mcl_data_dir", type=str, required=True, default='/data/datasets/MCL/',
                         help="Directory where all the MCL data is stored")
@@ -65,9 +72,19 @@ def main():
     parser.add_argument("--replay_frequency", type=int,
                         help="Number of training steps after which to do a memory replay step.")
 
+    # Arguments specific to Adapters algorithm
+    parser.add_argument("--adapter_config", choices=list(ADAPTER_MAP.keys()),
+                        help="Type of Adapter architecture")
+    parser.add_argument("--adapter_reduction_factor", type=int, default=0,
+                        help="Downsampling ratio for adapter layers")
+
+    # Arguments specific to Adapters algorithm
+    parser.add_argument("--layers_to_freeze", type=int, default=0,
+                        help="Number of layers to freeze (if freezing bottom-k layers)")
+
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
-    parser.add_argument("--wandb_project_name", type=str, default="vl-cl",
+    parser.add_argument("--wandb_project_name", type=str, default="climb-cl",
                         help="Name of W&B project where experiments are logged.")
 
     parser.add_argument("--batch_size", type=int, default=32,
@@ -82,6 +99,10 @@ def main():
 
     # Set up experiment directories
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
+    if args.cl_algorithm == 'adapter':
+        experiment_name = '{}_{}'.format(experiment_name, args.adapter_config)
+    elif args.cl_algorithm == 'freeze_bottom_k_layers':
+        experiment_name = experiment_name.replace('_k_layers', '{}layers'.format(args.layers_to_freeze))
     for i, task_key in enumerate(args.ordered_cl_tasks):
         experiment_name = '{}-task{}_{}'.format(experiment_name, i, task_key)
     output_dir = os.path.join(args.output_dir, experiment_name)
@@ -99,6 +120,10 @@ def main():
     if args.cl_algorithm == 'experience_replay':
         assert args.memory_percentage > 0.0
         assert args.replay_frequency > 0
+    if args.cl_algorithm == 'adapter':
+        assert args.adapter_reduction_factor > 0
+    if args.cl_algorithm == 'freeze_bottom_k_layers':
+        assert args.layers_to_freeze > 0
 
 
     # Ensure all the tasks for continual learning are supported VL tasks
@@ -112,7 +137,28 @@ def main():
     continual_learner_class = continual_learner_map[args.encoder_name]
     model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
     args.visual_mode = model_config['visual_mode']
-    #TODO: fix how the model is loaded everywhere
+
+    if args.cl_algorithm == 'freeze_encoder':
+        model.get_encoder().freeze_all_weights()
+    elif args.cl_algorithm == 'freeze_bottom_k_layers':
+        model.get_encoder().freeze_bottom_k_layers(k=args.layers_to_freeze)
+
+    # Add Adapters for each task
+    if args.cl_algorithm == 'adapter':
+        adapter_config = AdapterConfig.load(args.adapter_config)
+        config_dict = adapter_config.to_dict()
+        if args.adapter_reduction_factor > 0:
+            config_dict['reduction_factor'] = args.adapter_reduction_factor
+        adapter_config = AdapterConfig.from_dict(config_dict)
+        logger.info("Adding Adapter layers with configuration:")
+        logger.info(str(adapter_config))
+        for task_key in args.ordered_cl_tasks:
+            model.add_adapter(task_key, config=adapter_config)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info('Total Parameters: {:.2f}M'.format(total_params*10**-6))
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
+    logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
 
     if args.do_train:
 
@@ -122,7 +168,7 @@ def main():
         logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
         wandb.init(project=args.wandb_project_name,
             name=experiment_name,
-            entity='tejas1995',
+            entity='las-cl',
             reinit=True)
 
         results = []
@@ -137,6 +183,7 @@ def main():
 
             task_name = task_configs[task_key]['task_name']
             task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
+
             if os.path.isfile(os.path.join(task_output_dir, 'model')):
                 logger.info("Found checkpoint for task {}!".format(task_name))
                 model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
@@ -149,6 +196,14 @@ def main():
 
                 # Load the correct training method for current CL task, and call the training method
                 logger.info("-"*100)
+
+                if args.cl_algorithm == 'adapter':
+                    logger.info("Activating adapter networks only for task {}".format(task_name))
+                    model.train_adapter(task_key)
+                    model.set_active_adapters(task_key)
+                    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
+                    logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
+
                 logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
                 train_method = task_configs[task_key]['train_method']
                 best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, replay_memory)

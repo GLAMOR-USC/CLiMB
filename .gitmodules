@@ -1,0 +1,3 @@
+[submodule "src/adapter-transformers"]
+	path = src/adapter-transformers
+	url = https://github.com/GLAMOR-USC/adapter-transformers

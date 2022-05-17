@@ -41,6 +41,9 @@ class ViltEncoderWrapper(nn.Module):
         '''
         Wrapper around Vilt model from huggingface library
         this is the class that gets saved during checkpointing for continual learning
+        args:
+        processor - instance of ViltProcessor
+        vilt - instance of ViltModel class
         '''
 
         super().__init__()
@@ -93,6 +96,20 @@ class ViltEncoderWrapper(nn.Module):
 
         output = self.vilt(**encodings)
         return output.pooler_output
+
+    def freeze_all_weights(self):
+
+        for p in self.vilt.parameters():
+            p.requires_grad = False
+
+    def freeze_bottom_k_layers(self, k):
+
+        assert k < len(self.vilt.encoder.layer)
+        for p in self.vilt.embeddings.parameters():
+            p.requires_grad = False
+        for i in range(k):
+            for p in self.vilt.encoder.layer[i].parameters():
+                p.requires_grad = False
 
 
 class ViltContinualLearner(nn.Module):
@@ -232,6 +249,17 @@ class ViltContinualLearner(nn.Module):
 
         return self.vilt_encoder
 
+    def add_adapter(self, task_key, config):
+
+        self.vilt_encoder.vilt.add_adapter(task_key, config)
+
+    def train_adapter(self, task_key):
+
+        self.vilt_encoder.vilt.train_adapter(task_key)
+
+    def set_active_adapters(self, task_key):
+
+        self.vilt_encoder.vilt.set_active_adapters(task_key)
 
 class ViltForImageClassification(nn.Module):
 
@@ -339,7 +367,6 @@ class BertForMultipleChoice(nn.Module):
 
         output_logits = self.clf_layer(reshape_output).squeeze()
         return output_logits
-
 
 def load_vilt_encoder(pretrained_vilt_name, device):
 

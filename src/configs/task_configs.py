@@ -52,6 +52,7 @@ vqa_config = {
         'eval_forgetting_method': eval_vqa_forgetting,
         'batch_collate_fn': vqa_batch_collate,
         'get_train_dataset_method': get_vqa_train_dataset,
+        'random_baseline_score': 0.0
 }
 
 nlvr_config = {
@@ -70,6 +71,7 @@ nlvr_config = {
         'eval_forgetting_method': eval_nlvr2_forgetting,
         'batch_collate_fn': nlvr2_batch_collate,
         'get_train_dataset_method': get_nlvr2_train_dataset,
+        'random_baseline_score': 50.0
 }
 
 snli_ve_config = {
@@ -89,6 +91,7 @@ snli_ve_config = {
         'eval_forgetting_method': eval_snli_ve_forgetting,
         'batch_collate_fn': snlive_batch_collate,
         'get_train_dataset_method': get_snli_ve_train_dataset,
+        'random_baseline_score': 33.33
 }
 
 vcr_config = {
@@ -109,6 +112,7 @@ vcr_config = {
         'eval_forgetting_method': eval_vcr_forgetting,
         'batch_collate_fn': vcr_batch_collate,
         'get_train_dataset_method': get_vcr_train_dataset,
+        'random_baseline_score': 25.0
 }
 
 imdb_config = {

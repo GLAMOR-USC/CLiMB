@@ -65,6 +65,8 @@ def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, re
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
+    if args.cl_algorithm == 'adapter':
+        model.set_active_adapters("snli-ve")
 
     # Create dataloaders for training and validation
     snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
@@ -201,6 +203,8 @@ def eval_snli_ve_forgetting(args, model, model_path, task_configs, model_config,
     visual_mode = model_config['visual_mode']
     batch2inputs_converter = model_config['batch2inputs_converter']
     model.to(device)
+    if args.cl_algorithm == 'adapter':
+        model.set_active_adapters("snli-ve")
 
     snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
                                               data_dir=data_dir,
