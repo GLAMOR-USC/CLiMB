@@ -198,6 +198,7 @@ def main():
                 logger.info("-"*100)
 
                 if args.cl_algorithm == 'adapter':
+                    logger.info("Activating adapter networks only for task {}".format(task_name))
                     model.train_adapter(task_key)
                     model.set_active_adapters(task_key)
                     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
