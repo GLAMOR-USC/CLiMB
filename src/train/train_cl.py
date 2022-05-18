@@ -97,7 +97,7 @@ def main():
     args = parser.parse_args()
     args.ordered_cl_tasks = args.ordered_cl_tasks.split(',')
 
-    # Set up experiment directories
+    # --------------------- Set up experiment directories
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
     if args.cl_algorithm == 'adapter':
         experiment_name = '{}_{}'.format(experiment_name, args.adapter_config)
@@ -112,7 +112,7 @@ def main():
 
     set_seed(args)
 
-    # Ensure CL algorithm arguments are properly specified
+    # --------------------- Ensure CL algorithm arguments are properly specified  ---------------------
     if args.cl_algorithm == 'singletask_ft':
         assert len(args.ordered_cl_tasks) == 1
     else:
@@ -126,11 +126,11 @@ def main():
         assert args.layers_to_freeze > 0
 
 
-    # Ensure all the tasks for continual learning are supported VL tasks
+    # --------------------- Ensure all the tasks for continual learning are supported VL tasks  ---------------------
     for task_key in args.ordered_cl_tasks:
         assert task_key in SUPPORTED_VL_TASKS
 
-    # Load the correct Encoder model, based on encoder_name argument
+    # --------------------- Load the correct Encoder model, based on encoder_name argument  ---------------------
     model_config = model_configs[args.encoder_name]
     load_encoder_method = load_encoder_map[args.encoder_name]
     encoder = load_encoder_method(args.pretrained_model_name, device)
@@ -138,13 +138,17 @@ def main():
     model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
     args.visual_mode = model_config['visual_mode']
 
-    if args.cl_algorithm == 'freeze_encoder':
-        model.get_encoder().freeze_all_weights()
-    elif args.cl_algorithm == 'freeze_bottom_k_layers':
-        model.get_encoder().freeze_bottom_k_layers(k=args.layers_to_freeze)
 
-    # Add Adapters for each task
-    if args.cl_algorithm == 'adapter':
+    # --------------------- CL algorithm-specific initializations  ------------------------------------------
+    # No specific initializations for single-task finetuning and sequential finetuning
+
+    replay_memory = None
+    if args.cl_algorithm == 'experience_replay':
+        # Initialize an empty replay memory
+        replay_memory = ExperienceReplayMemory()
+
+    elif args.cl_algorithm == 'adapter':
+        # Create and asdd Adapters for each task
         adapter_config = AdapterConfig.load(args.adapter_config)
         config_dict = adapter_config.to_dict()
         if args.adapter_reduction_factor > 0:
@@ -155,14 +159,26 @@ def main():
         for task_key in args.ordered_cl_tasks:
             model.add_adapter(task_key, config=adapter_config)
 
+    elif args.cl_algorithm == 'freeze_encoder':
+        # Freeze encoder weights
+        model.get_encoder().freeze_all_weights()
+
+    elif args.cl_algorithm == 'freeze_bottom_k_layers':
+        # Freeze bottom K layers
+        model.get_encoder().freeze_bottom_k_layers(k=args.layers_to_freeze)
+
+    # ------------------------------------------ Print some model info ------------------------------------------
+    logger.info("Succesfully initialized {}-based Continual Learner".format(model_config['encoder_name']))
+    logger.info("{} task heads: {}".format(len(args.ordered_cl_tasks), ','.join(args.ordered_cl_tasks)))
+    logger.info("CL Algorithm: {}".format(args.cl_algorithm))
     total_params = sum(p.numel() for p in model.parameters())
     logger.info('Total Parameters: {:.2f}M'.format(total_params*10**-6))
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
     logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
+    logger.info('Model checkpoints saved to {}'.format(output_dir))
+    logger.info("-"*100)
 
     if args.do_train:
-
-        #assert len(os.listdir(output_dir)) == 0         # Ensure I am not overwriting an existing output directory
 
         # Create W&B experiment
         logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
@@ -171,10 +187,6 @@ def main():
             entity='las-cl',
             reinit=True)
 
-        if args.cl_algorithm == 'experience_replay':
-            replay_memory = ExperienceReplayMemory()
-        else:
-            replay_memory = None
 
         results = []
         if os.path.isfile(results_file):

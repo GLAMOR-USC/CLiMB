@@ -54,7 +54,7 @@ class TaskMemoryBuffer:
         self.task_config = task_config
 
         self.task_trainer = task_trainer
-        self.dataset = task_trainer.get_train_dataset()
+        self.dataset = task_trainer.get_train_dataloader().dataset
         self.batch_collate_fn = task_trainer.get_collate_fn()
         if task_key == 'nlvr2':
             self.batch_size = int(args.batch_size/2)

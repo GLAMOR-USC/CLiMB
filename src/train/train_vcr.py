@@ -72,8 +72,8 @@ class VCRTrainer:
         self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
 
-    def get_train_dataset(self):
-        return self.vcr_train_dataloader.dataset
+    def get_train_dataloader(self):
+        return self.vcr_train_dataloader
 
     def get_collate_fn(self):
         return self.vcr_train_dataloader.collate_fn

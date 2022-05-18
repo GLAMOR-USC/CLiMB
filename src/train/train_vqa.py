@@ -82,8 +82,8 @@ class VQATrainer:
         scores = (one_hots * labels)
         return scores
     
-    def get_train_dataset(self):
-        return self.vqa_train_dataloader.dataset
+    def get_train_dataloader(self):
+        return self.vqa_train_dataloader
 
     def get_collate_fn(self):
         return self.vqa_train_dataloader.collate_fn
@@ -98,7 +98,7 @@ class VQATrainer:
             output = model(task_key='vqa', **inputs)
         return output
 
-    def train_step(self, model, batch, optimizer, scheduler=None):
+    def train_step(self, model, batch, optimizer=None, scheduler=None):
 
         output = self.forward_pass(model, batch)
         logits = output[1]
@@ -106,10 +106,11 @@ class VQATrainer:
         loss = self.loss_criterion(logits, target) * target.shape[1]
         loss.backward()
 
-        optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
-        optimizer.zero_grad()
+        if optimizer is not None:
+            optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
+            optimizer.zero_grad()
 
         return loss, output
 

@@ -75,8 +75,8 @@ class SNLIVETrainer:
         self.max_steps = len(self.snli_ve_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
 
-    def get_train_dataset(self):
-        return self.snli_ve_train_dataloader.dataset
+    def get_train_dataloader(self):
+        return self.snli_ve_train_dataloader
 
     def get_collate_fn(self):
         return self.snli_ve_train_dataloader.collate_fn
@@ -165,7 +165,7 @@ class SNLIVETrainer:
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'snli-ve': {'val_score': eval_score}})
+            wandb.log({'snli-ve': {'dev_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score

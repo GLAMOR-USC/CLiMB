@@ -13,9 +13,11 @@ class EWC:
         self.param_dict = {}
         self.task_keys = []
 
-    def add_task_parameters(self, task_key, model, train_args):
+    def add_task_parameters(self, task_key, model, task_trainer):
 
+        task_config = task_configs[task_key]
         self.fisher_dict[task_key] = defaultdict(float)
+
         # Save model params
         self.param_dict[task_key] = {}
         for name, param in model.get_encoder().named_parameters():
@@ -24,21 +26,16 @@ class EWC:
         assert task_key not in self.task_keys
         self.task_keys.append(task_key)
 
-        optimizer = train_args['optimizer']
-        batch2inputs_converter = train_args['batch2inputs_converter']
-        dataloader = train_args['dataloader']
-        loss_criterion = train_args['loss_criterion']
+        optimizer = task_trainer.create_optimizer(model)
+        batch2inputs_converter = task_trainer.batch2inputs_converter
+        dataloader = task_trainer.get_train_dataloader()
+        loss_criterion = task_trainer.loss_criterion
 
         optimizer.zero_grad()
         num_samples_completed = 0
         # Create fisher matrix
-        for step, batch in dataloader:
-            inputs = batch2inputs_converter(batch)
-            labels = batch['labels'].to(device)
-            output = model(task_key=task_key, **inputs)
-            logits = output[1]
-            loss = loss_criterion(logits, labels)
-            loss.backward()
+        for step, batch in enumerate(tqdm(dataloader, desc='Computing Fisher information matrix for {} checkpoint'.format(task_config['task_name']))):
+            loss, output = task_trainer.train_step(model, batch)
 
             for name, param in model.get_encoder().named_parameters():
                 self.fisher_dict[task_key][name] += param.grad.data.pow(2).cpu().clone()
