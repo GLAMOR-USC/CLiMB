@@ -171,32 +171,37 @@ def main():
             entity='las-cl',
             reinit=True)
 
-        results = []
         if args.cl_algorithm == 'experience_replay':
             replay_memory = ExperienceReplayMemory()
         else:
             replay_memory = None
 
+        results = []
+        if os.path.isfile(results_file):
+            results = json.load(open(results_file))
+        task_trainers = {}
+
         logger.info("-"*100)
         logger.info("Training models on Vision-Language continual learning tasks...")
         for task_num, task_key in enumerate(args.ordered_cl_tasks):
 
+            logger.info("-"*100)
             task_name = task_configs[task_key]['task_name']
             task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
 
             if os.path.isfile(os.path.join(task_output_dir, 'model')):
+
+                # If we find model checkpoint for this task, load the checkpoint and move onto next CL task
                 logger.info("Found checkpoint for task {}!".format(task_name))
                 model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
                 logger.info("Loaded model checkpoint from task {}! Moving on to next task...".format(task_name))
 
-                get_train_dataset_method = task_configs[task_key]['get_train_dataset_method']
-                task_train_dataset = get_train_dataset_method(args, task_configs, model_config, tokenizer)
+                task_trainer_class = task_configs[task_key]['task_trainer']
+                task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
 
             else:
 
-                # Load the correct training method for current CL task, and call the training method
-                logger.info("-"*100)
-
+                #If CL algorithm is adapters, activate adapter for this task
                 if args.cl_algorithm == 'adapter':
                     logger.info("Activating adapter networks only for task {}".format(task_name))
                     model.train_adapter(task_key)
@@ -204,10 +209,11 @@ def main():
                     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
                     logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
 
+                # Create the Trainer method for the current CL task, and call the train method
                 logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
-                train_method = task_configs[task_key]['train_method']
-                best_eval_score, best_model, task_train_dataset = train_method(args, model, task_configs, model_config, tokenizer, device, replay_memory)
-
+                task_trainer_class = task_configs[task_key]['task_trainer']
+                task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
+                best_eval_score, best_model = task_trainer.train(model, replay_memory=replay_memory)
                 logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
                 # Save best model checkpoint, and separately save the models' Encoder object
@@ -230,13 +236,15 @@ def main():
                 json.dump(results, open(results_file, 'w'))
                 logger.info("Saved continual learning results so far!")
 
+            # If doing experience replay, create memory buffer for current task
             if args.cl_algorithm == 'experience_replay':
                 replay_memory.add_task_memory_buffer(args=args,
                                                      task_key=task_key,
                                                      task_config=task_configs[task_key],
-                                                     train_dataset=task_train_dataset,
+                                                     task_trainer=task_trainer,
                                                      memory_percentage=args.memory_percentage,
                                                      sampling_strategy=args.memory_sampling_strategy)
+            task_trainers[task_key] = task_trainer
 
     if args.do_eval:
 
@@ -247,8 +255,19 @@ def main():
         logger.info("Average forward transfer gain = {:.2f}%".format(average_relative_gain))
         logger.info("-"*100)
 
+        if not args.do_train:
+            logger.info("Creating task trainers for forgetting evaluation...")
+            task_trainers = {}
+            for task_num, task_key in enumerate(args.ordered_cl_tasks):
+                task_trainer_class = task_configs[task_key]['task_trainer']
+                task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
+                task_trainers[task_key] = task_trainer
+        else:
+            for task_num, task_key in enumerate(args.ordered_cl_tasks):
+                assert task_key in task_trainers.keys()
+
         logger.info("Evaluating CATASTROPHIC FORGETTING of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
-        catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, tokenizer, device)
+        catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, task_trainers)
         # TODO: Aggregate catastrophic forgetting results
         logger.info("-"*100)
 

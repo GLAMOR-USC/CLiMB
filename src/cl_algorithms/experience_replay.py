@@ -7,166 +7,16 @@ from torch.optim import AdamW
 
 logger = logging.getLogger(__name__)
 
-def vqa_replay_step(model, replay_memory, task_configs, batch2inputs_converter, device):
-
-    vqa_config = task_configs['vqa']
-    # Training hyperparameters
-    num_epochs = vqa_config['num_epochs']
-    lr = vqa_config['lr']
-    adam_epsilon = vqa_config['adam_epsilon']
-    weight_decay = vqa_config['weight_decay']
-
-    # Create optimizer
-    loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
-    
-    replay_batch = replay_memory.sample_replay_batch('vqa')
-    inputs = batch2inputs_converter(replay_batch)
-    target = replay_batch['target_scores'].to(device)
-
-    #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-    output = model(task_key='vqa', **inputs)
-    logits = output[1]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
-    loss = loss_criterion(logits, target) * target.shape[1]
-
-    loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
-    wandb.log({'vqa': {'loss': loss.item()}})
-
-    return loss.item()
-
-def nlvr2_replay_step(model, replay_memory, task_configs, batch2inputs_converter, device):
-
-    nlvr_config = task_configs['nlvr2']
-    # Training hyperparameters
-    num_epochs = nlvr_config['num_epochs']
-    lr = nlvr_config['lr']
-    adam_epsilon = nlvr_config['adam_epsilon']
-    weight_decay = nlvr_config['weight_decay']
-    warmup_ratio = nlvr_config['warmup_ratio']
-
-    # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss()
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
-    
-    replay_batch = replay_memory.sample_replay_batch('nlvr2')
-    target = replay_batch['labels'].to(device)
-    inputs = batch2inputs_converter(replay_batch)
-
-    output = model(task_key='nlvr2', **inputs)
-    logits = output[1]
-    loss = loss_criterion(logits, target)
-
-    loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
-    wandb.log({'nlvr': {'loss': loss.item()}})
-
-    return loss.item()
-
-def snli_ve_replay_step(model, replay_memory, task_configs, batch2inputs_converter, device):
-
-    snli_ve_config = task_configs['snli-ve']
-    # Training hyperparameters
-    num_epochs = snli_ve_config['num_epochs']
-    lr = snli_ve_config['lr']
-    adam_epsilon = snli_ve_config['adam_epsilon']
-    weight_decay = snli_ve_config['weight_decay']
-
-    # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss(reduction='mean')
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
-    
-    replay_batch = replay_memory.sample_replay_batch('snli-ve')
-    inputs = batch2inputs_converter(replay_batch)
-    labels = replay_batch['labels'].to(device)
-
-    #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-    output = model(task_key='snli-ve', **inputs)
-    logits = output[1]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
-    loss = loss_criterion(logits, labels)
-
-    loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
-    wandb.log({'snli-ve': {'loss': loss.item()}})
-
-    return loss.item()
-
-def vcr_replay_step(model, replay_memory, task_configs, batch2inputs_converter, device):
-
-    vcr_config = task_configs['vcr']
-    # Training hyperparameters
-    num_epochs = vcr_config['num_epochs']
-    lr = vcr_config['lr']
-    adam_epsilon = vcr_config['adam_epsilon']
-    weight_decay = vcr_config['weight_decay']
-
-    # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss()
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
-
-    replay_batch = replay_memory.sample_replay_batch('vcr')
-    inputs = batch2inputs_converter(replay_batch)
-    target = replay_batch['labels'].to(device)
-
-    #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-    output = model(task_key='vcr', **inputs)
-    logits = output[1]
-    loss = loss_criterion(logits, target)
-
-    loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
-    wandb.log({'vcr': {'loss': loss.item()}})
-
-    return loss.item()
-
-
-REPLAY_STEP_METHOD_MAP = {'vqa': vqa_replay_step,
-                          'nlvr2': nlvr2_replay_step,
-                          'snli-ve': snli_ve_replay_step,
-                          'vcr': vcr_replay_step,
-                        }
 
 class ExperienceReplayMemory:
 
     def __init__(self):
         self.memory_buffers = {}
-        self.replay_step_method = {}
 
-    def add_task_memory_buffer(self, args, task_key, task_config, train_dataset, memory_percentage, sampling_strategy):
+    def add_task_memory_buffer(self, args, task_key, task_config, task_trainer, memory_percentage, sampling_strategy):
 
-        task_buffer = TaskMemoryBuffer(args, task_key, task_config, train_dataset, memory_percentage, sampling_strategy)
+        task_buffer = TaskMemoryBuffer(args, task_key, task_config, task_trainer, memory_percentage, sampling_strategy)
         self.memory_buffers[task_key] = task_buffer
-        self.replay_step_method[task_key] = REPLAY_STEP_METHOD_MAP[task_key]
 
     def do_replay(self):
         '''
@@ -179,27 +29,37 @@ class ExperienceReplayMemory:
         sampled_previous_task = random.choice(previous_tasks)
         return sampled_previous_task
 
-    def sample_replay_batch(self, task_key):
-        return self.memory_buffers[task_key].sample_replay_batch()
+    def run_replay_step(self, task_key, model):
+        task_buffer = self.memory_buffers[task_key]
+        task_config = task_buffer.task_config
+        task_trainer = task_buffer.task_trainer
 
-    def run_replay_step(self, task_key, **replay_args):
-        replay_step_method = self.replay_step_method[task_key]
-        return replay_step_method(replay_memory=self, **replay_args)
+        optimizer = task_trainer.create_optimizer(model)
+        replay_batch = task_buffer.sample_replay_batch()
+        replay_loss, output = task_trainer.train_step(model, replay_batch, optimizer)
+
+        logger.info("{} replay step: loss = {:.5f}".format(task_config['task_name'], replay_loss.item()))
+        wandb.log({task_key: {'loss': replay_loss.item()}})
+        return replay_loss
 
 class TaskMemoryBuffer:
 
     '''
     Buffer of training examples that can be used for replay steps
     '''
-    def __init__(self, args, task_key, task_config, train_dataset, memory_percentage, sampling_strategy):
+    def __init__(self, args, task_key, task_config, task_trainer, memory_percentage, sampling_strategy):
 
         self.task_key = task_key
         self.task_name = task_config['task_name']
-        self.batch_collate_fn = task_config['batch_collate_fn']
+        self.task_config = task_config
 
-        self.dataset = train_dataset
+        self.task_trainer = task_trainer
+        self.dataset = task_trainer.get_train_dataset()
+        self.batch_collate_fn = task_trainer.get_collate_fn()
         if task_key == 'nlvr2':
             self.batch_size = int(args.batch_size/2)
+        elif task_key == 'vcr':
+            self.batch_size = int(args.batch_size/4)
         else:
             self.batch_size = args.batch_size
         self.visual_mode = args.visual_mode
@@ -225,5 +85,5 @@ class TaskMemoryBuffer:
     def sample_replay_batch(self):
 
         sampled_instances = random.sample(self.memory_idxs, self.batch_size)
-        batch = self.batch_collate_fn([self.dataset[i] for i in sampled_instances], self.visual_mode)
+        batch = self.batch_collate_fn([self.dataset[i] for i in sampled_instances])
         return batch
