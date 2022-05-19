@@ -89,20 +89,29 @@ class VCRTrainer:
         return output
 
 
-    def train_step(self, model, batch, optimizer, scheduler=None):
+    def train_step(self, model, batch, optimizer=None, scheduler=None, ewc=None):
 
         output = self.forward_pass(model, batch)
         logits = output[1]
         target = batch['labels'].to(self.device)
         loss = self.loss_criterion(logits, target)
-        loss.backward()
 
-        optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
-        optimizer.zero_grad()
+        if ewc is not None and ewc.do_ewc() is True:
+            ewc_task, ewc_loss = ewc.compute_ewc_loss(model)
+            total_loss = loss + ewc_loss
+            total_loss.backward()
+        else:
+            ewc_task = None
+            ewc_loss = None
+            loss.backward()
 
-        return loss, output
+        if optimizer is not None:
+            optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
+            optimizer.zero_grad()
+
+        return loss, output, ewc_task, ewc_loss
 
     def create_optimizer(self, model):
 
@@ -114,15 +123,17 @@ class VCRTrainer:
         optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
         return optimizer
 
-    def train(self, model, replay_memory=None):
+    def train(self, model, replay_memory=None, ewc=None):
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
             model.set_active_adapters("vcr")
-
-        if self.args.cl_algorithm == 'experience_replay':
+        elif self.args.cl_algorithm == 'experience_replay':
             assert replay_memory is not None
             do_replay = replay_memory.do_replay()
+        elif self.args.cl_algorithm == 'ewc':
+            assert ewc is not None
+            do_ewc = ewc.do_ewc()
 
         # Create optimizer
         optimizer = self.create_optimizer(model)
@@ -149,15 +160,18 @@ class VCRTrainer:
             model.train()
             for step, batch in enumerate(tqdm(self.vcr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
 
-                loss, output = self.train_step(model, batch, optimizer, scheduler)
-
-                if (step + 1) % 100 == 0:
-                    wandb.log({'vcr': {'loss': loss.item()}})
+                loss, output, ewc_task, ewc_loss = self.train_step(model, batch, optimizer, scheduler, ewc)
 
                 if self.args.cl_algorithm == 'experience_replay' and do_replay is True:
                     if (step + 1) % self.args.replay_frequency == 0:
                         sampled_replay_task = replay_memory.sample_replay_task()
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
+
+                if (step + 1) % 100 == 0:
+                    log_dict = {'vcr': {'loss': loss.item()}}
+                    if do_ewc is True:
+                        log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
+                    wandb.log(log_dict)
 
             # Do evaluation after epoch
             eval_score = self.eval(model)

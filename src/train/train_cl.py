@@ -25,7 +25,7 @@ from transformers.adapters import AdapterConfig
 
 from modeling import load_encoder_map, continual_learner_map
 
-from cl_algorithms import ExperienceReplayMemory
+from cl_algorithms import ExperienceReplayMemory, EWC
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
@@ -53,6 +53,7 @@ def main():
     parser.add_argument("--cl_algorithm", type=str, required=True, choices=['singletask_ft',
                                                                             'sequential_ft',
                                                                             'experience_replay',
+                                                                            'ewc',
                                                                             'adapter',
                                                                             'freeze_encoder',
                                                                             'freeze_bottom_k_layers'],
@@ -78,7 +79,13 @@ def main():
     parser.add_argument("--adapter_reduction_factor", type=int, default=0,
                         help="Downsampling ratio for adapter layers")
 
-    # Arguments specific to Adapters algorithm
+    # Arguments specific to EWC algorithm
+    parser.add_argument("--ewc_fisher_sample_percentage", type=float, default=0.0,
+                        help="Percentage of training samples for computing Fisher information matrix per task")
+    parser.add_argument("--ewc_loss_weight", type=float, default=0.0,
+                        help="Factoring for scaling the EWC loss")
+
+    # Arguments specific to frozen bottom-k layers algorithm
     parser.add_argument("--layers_to_freeze", type=int, default=0,
                         help="Number of layers to freeze (if freezing bottom-k layers)")
 
@@ -122,6 +129,9 @@ def main():
         assert args.replay_frequency > 0
     if args.cl_algorithm == 'adapter':
         assert args.adapter_reduction_factor > 0
+    if args.cl_algorithm == 'ewc':
+        assert args.ewc_fisher_sample_percentage > 0
+        assert args.ewc_loss_weight > 0.0
     if args.cl_algorithm == 'freeze_bottom_k_layers':
         assert args.layers_to_freeze > 0
 
@@ -143,6 +153,7 @@ def main():
     # No specific initializations for single-task finetuning and sequential finetuning
 
     replay_memory = None
+    ewc = None
     if args.cl_algorithm == 'experience_replay':
         # Initialize an empty replay memory
         replay_memory = ExperienceReplayMemory()
@@ -158,6 +169,9 @@ def main():
         logger.info(str(adapter_config))
         for task_key in args.ordered_cl_tasks:
             model.add_adapter(task_key, config=adapter_config)
+
+    elif args. cl_algorithm == 'ewc':
+        ewc = EWC(args)
 
     elif args.cl_algorithm == 'freeze_encoder':
         # Freeze encoder weights
@@ -225,7 +239,9 @@ def main():
                 logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
                 task_trainer_class = task_configs[task_key]['task_trainer']
                 task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
-                best_eval_score, best_model = task_trainer.train(model, replay_memory=replay_memory)
+                best_eval_score, best_model = task_trainer.train(model,
+                                                                replay_memory=replay_memory,
+                                                                ewc=ewc)
                 logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(task_name, best_eval_score, best_model['epoch']+1))
 
                 # Save best model checkpoint, and separately save the models' Encoder object
@@ -248,18 +264,24 @@ def main():
                 json.dump(results, open(results_file, 'w'))
                 logger.info("Saved continual learning results so far!")
 
-            # If doing experience replay, create memory buffer for current task
+            task_trainers[task_key] = task_trainer
             if args.cl_algorithm == 'experience_replay':
+                # If doing experience replay, create memory buffer for current task
                 replay_memory.add_task_memory_buffer(args=args,
                                                      task_key=task_key,
                                                      task_config=task_configs[task_key],
                                                      task_trainer=task_trainer,
                                                      memory_percentage=args.memory_percentage,
                                                      sampling_strategy=args.memory_sampling_strategy)
-            task_trainers[task_key] = task_trainer
+            elif args.cl_algorithm == 'ewc' and task_num < len(args.ordered_cl_tasks)-1:
+                # If doing EWC, save task parameters and compute Fisher information matrix over the training set
+                ewc.save_task_parameters(task_key=task_key,
+                                        model=model,
+                                        task_trainer=task_trainer)
 
     if args.do_eval:
 
+        # Forward transfer from continual learning, by comparing to single-task finetuning score
         logger.info("-"*100)
         logger.info("Evaluating FORWARD TRANSFER of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
         forward_transfer_dict = forward_transfer_eval(args, results_file)
@@ -267,6 +289,7 @@ def main():
         logger.info("Average forward transfer gain = {:.2f}%".format(average_relative_gain))
         logger.info("-"*100)
 
+        # Forgetting evaluation
         if not args.do_train:
             logger.info("Creating task trainers for forgetting evaluation...")
             task_trainers = {}

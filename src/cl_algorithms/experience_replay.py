@@ -36,7 +36,7 @@ class ExperienceReplayMemory:
 
         optimizer = task_trainer.create_optimizer(model)
         replay_batch = task_buffer.sample_replay_batch()
-        replay_loss, output = task_trainer.train_step(model, replay_batch, optimizer)
+        replay_loss, output, _, _ = task_trainer.train_step(model, replay_batch, optimizer)
 
         logger.info("{} replay step: loss = {:.5f}".format(task_config['task_name'], replay_loss.item()))
         wandb.log({task_key: {'loss': replay_loss.item()}})
