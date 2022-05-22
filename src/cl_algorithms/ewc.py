@@ -17,7 +17,7 @@ class EWC:
         self.param_dict = {}
         self.task_keys = []
 
-    def save_task_parameters(self, task_key, model, task_trainer):
+    def save_task_parameters(self, task_key, model, task_trainer, device):
 
         task_config = task_configs[task_key]
         self.fisher_dict[task_key] = defaultdict(float)
@@ -37,6 +37,7 @@ class EWC:
         fisher_sample_size = int(self.fisher_sample_percentage*len(dataloader.dataset))
         self.device = task_trainer.device
 
+        model.to(device)
         optimizer.zero_grad()
         num_samples_completed = 0
         # Create fisher matrix

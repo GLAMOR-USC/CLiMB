@@ -172,7 +172,7 @@ class SNLIVETrainer:
 
                 if (step + 1) % 100 == 0:
                     log_dict = {'snli-ve': {'loss': loss.item()}}
-                    if do_ewc is True:
+                    if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
                     wandb.log(log_dict)
 

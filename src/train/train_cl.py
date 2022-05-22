@@ -277,7 +277,8 @@ def main():
                 # If doing EWC, save task parameters and compute Fisher information matrix over the training set
                 ewc.save_task_parameters(task_key=task_key,
                                         model=model,
-                                        task_trainer=task_trainer)
+                                        task_trainer=task_trainer,
+                                        device=device)
 
     if args.do_eval:
 
