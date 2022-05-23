@@ -94,7 +94,7 @@ class ImageNetDataset(Dataset):
         self.dataset = []
         lines = csv.DictReader(open(annot_file))
         for line in lines:
-            fn = os.path.join(self.data_dir, line['ImageId']+".JPEG")
+            fn = os.path.join(self.data_dir, 'val', line['ImageId']+".JPEG")
             cls_dir = line['PredictionString'].split()[0]
             label = dir2lb[cls_dir]
             self.dataset.append([fn, label])
