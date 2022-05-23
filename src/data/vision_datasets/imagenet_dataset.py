@@ -26,19 +26,19 @@ logging.basicConfig(
 
 class ImageNetDataset(Dataset):
 
-    def __init__(self, image_dir, selected_fn, mode, n_shot=None, subsample_seed=None):
+    def __init__(self, image_dir, mode, n_shot=None, subsample_seed=None):
         self.image_dir = image_dir
-        self.selected_fn = selected_fn
         self.mode = mode
         self.n_shot = n_shot
         self.subsample_seed = subsample_seed
+        self.pil_transform = T.Resize(size=384, max_size=640)
 
         self.preprocess()
 
 
-    def get_train_val_split(self, dataset, split_ratio=0.7):
+    def get_train_val_split(self, dataset, split_ratio=0.9):
         train_dataset, val_dataset = [], []
-        # split per class
+        # split each class into train/val; balanced
         for cls_data in dataset:
             n_train = int(len(cls_data)*split_ratio)
             # shuffle before train/val split
@@ -51,7 +51,7 @@ class ImageNetDataset(Dataset):
             if self.mode != 'train': continue
             if self.n_shot is None:
                 train_dataset.extend(train_cls_ds)
-            else: #subsample with different seeds
+            else: #subsample the training set with different seeds
                 random.seed(self.subsample_seed)
                 random.shuffle(train_cls_ds)
                 train_dataset.extend(train_cls_ds[:self.n_shot])
@@ -82,6 +82,8 @@ class ImageNetDataset(Dataset):
         filename, label = self.dataset[index]
         image = Image.open(filename)
         image = image.convert('RGB')
+        if min(list(image.size)) > 384:
+            image = self.pil_transform(image)
 
         return image, label
 
@@ -97,10 +99,10 @@ def batch_collate(batch):
             'labels': torch.LongTensor(labels)}    
 
 
-def get_data_loader(args, img_dir, selected_fn, split, n_shot=None, subsampled_seed=None):
+def get_data_loader(args, img_dir, split, n_shot=None, subsampled_seed=None):
     logger.info(f"Creating ImageNet {split} dataloader")
 
-    dataset = ImageNetDataset(img_dir, selected_fn, split, n_shot, subsampled_seed)
+    dataset = ImageNetDataset(img_dir, split, n_shot, subsampled_seed)
     batch_size = args.batch_size if split == 'train' else 128
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -116,7 +118,6 @@ def get_data_loader(args, img_dir, selected_fn, split, n_shot=None, subsampled_s
 if __name__ == '__main__':
 
     img_dir = '/data/datasets/MCL/ILSVRC2012/train_256'
-    selected_fn = '/data/datasets/MCL/coco_imagenet_shared_objects.npy'
 
     class Args:
         def __init__(self):
@@ -124,7 +125,7 @@ if __name__ == '__main__':
             self.num_workers = 0
 
     args = Args()
-    dataloader = get_data_loader(args, img_dir, selected_fn, 'train', n_shot=64, subsampled_seed=20)
+    dataloader = get_data_loader(args, img_dir, 'train', n_shot=64, subsampled_seed=20)
     for batch in tqdm(dataloader):
         print(batch['raw_texts'])
         print(batch['images'])

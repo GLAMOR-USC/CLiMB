@@ -23,7 +23,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 from transformers import BertTokenizer
 
-from data.image_datasets.imagenet_dataset import get_data_loader
+from data.vision_datasets.imagenet_dataset import get_data_loader
 from modeling import load_encoder_map
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs
@@ -41,7 +41,6 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
-    selected_fn = task_config['selected_fn']
     n_shot = args.num_shot
     subsample_seed = args.subsample_seed
     output_dir = args.output_dir
@@ -57,7 +56,9 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
 
     '''
     # load the ckpt of upstream tasks
-    path = '/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve/checkpoints/task2_snli-ve/model'
+    path = '/data/experiments/MCL/vilt-singletask_ft-task0_nlvr2/checkpoints/task0_nlvr2/model'
+    if 'nlvr2' in path:
+        model.vilt_encoder.expand_modality_type_embeddings()
     ckpt_dict = torch.load(path)
     model_dict = model.state_dict()
     for k in ckpt_dict.keys():
@@ -72,16 +73,15 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     train_dataloader = get_data_loader(
         args,
         data_dir,
-        selected_fn,
         'train', 
         n_shot,
-        subsample_seed)
-
+        subsample_seed
+    )
     val_dataloader = get_data_loader(
         args,
         data_dir,
-        selected_fn,
-        'val') 
+        'val'
+    ) 
 
     # Training hyperparameters
     num_epochs = task_config['num_epochs']
@@ -131,14 +131,14 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
             if step % 50 == 0:
                 print('loss:', loss.item())
 
-        # Do evaluation after epoch
-        eval_score = eval(args, model, val_dataloader, device, batch2inputs_converter)
-        logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+    # Do evaluation after epoch
+    eval_score = eval(args, model, val_dataloader, device, batch2inputs_converter)
+    logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
 
-        if eval_score > best_score:
-            logger.info("New best evaluation score: {:.2f}".format(eval_score))
-            best_score = eval_score
-            best_epoch = epoch+1
+    if eval_score > best_score:
+        logger.info("New best evaluation score: {:.2f}".format(eval_score))
+        best_score = eval_score
+        best_epoch = epoch+1
 
     write_results(n_shot, subsample_seed, best_score, task_name, output_dir)
     return best_score, best_epoch

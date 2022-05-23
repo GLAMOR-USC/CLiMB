@@ -170,8 +170,7 @@ piqa_config = {
 
 imagenet_config = {
         'task_name': 'imagenet',
-        'data_dir': '/data/datasets/MCL/ILSVRC2012/train_256',
-        'selected_fn': '/data/datasets/MCL/coco_imagenet_shared_objects.npy',
+        'data_dir': '/data/datasets/MCL/ILSVRC2012/train',
         'splits': ['train', 'val'],
         'num_labels': 1000,
         'model_type': 'classification',

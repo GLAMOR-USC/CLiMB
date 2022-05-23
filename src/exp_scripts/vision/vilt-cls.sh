@@ -3,7 +3,7 @@ export TOKENIZERS_PARALLELISM=false
 
 task_arr=("imagenet")
 nshot_arr=(16 32)
-subseed_arr=(10 50 100 500 1000)
+subseed_arr=(10 50 100)
 
 for t in ${task_arr[@]}
 do
