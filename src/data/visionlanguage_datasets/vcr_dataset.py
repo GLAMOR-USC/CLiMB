@@ -94,7 +94,7 @@ class VCRDataset(Dataset):
             count = 0
             for line in json_lines:
                 
-                image_id = os.path.join(data_dir, 'drawn_images/bbox/' + str(split) + '/' + str(task_type)+ '/' + str(line['annot_id']) +'.jpg')  ## train-0, train-1, train-2
+                image_path = os.path.join('drawn_images/bbox/' + str(split) + '/' + str(task_type)+ '/' + str(line['annot_id']) +'.jpg')  ## train-0, train-1, train-2
                 #print(image_id)
                 #exit()
                 texts = []
@@ -126,7 +126,7 @@ class VCRDataset(Dataset):
                 #print(tokens)
                 #####input_ids = self.tokenizer.convert_tokens_to_ids(tokens[0])
 
-                doc = {'image_id': image_id,
+                doc = {'image_path': image_path,
                         'text': texts,
                         #'text_input_ids': input_ids,
                         'label': label}
@@ -142,7 +142,7 @@ class VCRDataset(Dataset):
     def __getitem__(self, index):
         example = self.data[index]
         
-        image_fn     = example['image_id']
+        image_fn     = os.path.join(self.data_dir, example['image_path'])
         pil_transform = T.Resize(size=384, max_size=640)
         image = Image.open(image_fn)
         image = image.convert('RGB')
@@ -195,6 +195,7 @@ if __name__ == '__main__':
         def __init__(self):
             self.batch_size = 4
             self.num_workers = 2
+            self.visual_mode = 'pil-image'
     
     args = Args()
     data_dir          = '/data/datasets/MCL/vcr/'
@@ -207,11 +208,11 @@ if __name__ == '__main__':
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     #vcr.VCRDataset(data_dir, split, tokenizer, task_type='answer')
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer')
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer')
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer', visual_mode=args.visual_mode)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer', visual_mode=args.visual_mode)
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale')
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale')
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale', visual_mode=args.visual_mode)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale', visual_mode=args.visual_mode)
 
     #max_token_len = 0
     #len_over_40 = 0
