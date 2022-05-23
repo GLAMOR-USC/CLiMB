@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from transformers import BertConfig, BertTokenizer, BertModel
-from transformers import ViltProcessor, ViltModel
+from transformers import ViltConfig, ViltProcessor, ViltModel
 from transformers import BertTokenizerFast
 
 logger = logging.getLogger(__name__)
@@ -370,13 +370,24 @@ class BertForMultipleChoice(nn.Module):
         return output_logits
 
 
-def load_vilt_encoder(pretrained_vilt_name, device):
+def load_vilt_encoder(loaded_encoder_name, device, pretrained_vilt_name="dandelin/vilt-b32-mlm"):
 
     logger.info("-"*100)
-    logger.info("Loading pretrained ViLT model: {}".format(pretrained_vilt_name))
+    logger.info("Loading ViLT encoder model: {}".format(loaded_encoder_name))
     vilt_processor = ViltProcessor.from_pretrained(pretrained_vilt_name)
-    vilt = ViltModel.from_pretrained(pretrained_vilt_name)
-    vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
+
+    if loaded_encoder_name == pretrained_vilt_name: # load pretrained encoder
+        vilt = ViltModel.from_pretrained(pretrained_vilt_name)
+        vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
+
+    else: # load pre-finetuned encoder
+        config = ViltConfig.from_pretrained(pretrained_vilt_name)
+        vilt = ViltModel(config) # random init.
+        vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
+        if 'nlvr2' in loaded_encoder_name:
+            vilt_encoder.expand_modality_type_embeddings()
+        vilt_encoder.load_state_dict(torch.load(loaded_encoder_name)) # loaded
+
     logger.info("Successfully loaded pretrained ViLT model")
     return vilt_encoder
 

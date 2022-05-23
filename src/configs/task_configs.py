@@ -170,12 +170,40 @@ piqa_config = {
 
 imagenet_config = {
         'task_name': 'imagenet',
-        'data_dir': '/data/datasets/MCL/ILSVRC2012/train',
+        'data_dir': '/data/datasets/MCL/ILSVRC2012',
         'splits': ['train', 'val'],
         'num_labels': 1000,
         'model_type': 'classification',
-        'num_epochs': 6,
-        'lr': 4e-5,
+        'num_epochs': 8,
+        'lr': 1e-4,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+}
+
+
+places365_config = {
+        'task_name': 'places365',
+        'data_dir': '/data/datasets/MCL/Places365',
+        'splits': ['train', 'val'],
+        'num_labels': 365,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 1e-4,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+}
+
+
+inat2019_config = {
+        'task_name': 'inat2019',
+        'data_dir': '/data/datasets/MCL/iNat2019',
+        'splits': ['train', 'val'],
+        'num_labels': 1010,
+        'model_type': 'classification',
+        'num_epochs': 8,
+        'lr': 1e-4,
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
@@ -193,5 +221,7 @@ task_configs = {
     'hellaswag': hellaswag_config,
     'piqa': piqa_config,
     'commonsenseqa': commonsenseqa_config,
-    'imagenet': imagenet_config
+    'imagenet': imagenet_config,
+    'places365': places365_config,
+    'inat2019': inat2019_config,
 }
