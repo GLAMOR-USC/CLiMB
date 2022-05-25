@@ -1,12 +1,7 @@
-from train.train_vqa import train_vqa, eval_vqa_forgetting, get_vqa_train_dataset
-from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, get_nlvr2_train_dataset
-from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, get_snli_ve_train_dataset
-from train.train_vcr import train_vcr, eval_vcr_forgetting, get_vcr_train_dataset
-
-from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
-from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
-from data.visionlanguage_datasets.snli_ve_dataset import snlive_batch_collate
-from data.visionlanguage_datasets.vcr_dataset import vcr_batch_collate
+from train.train_vqa import VQATrainer
+from train.train_nlvr2 import NLVR2Trainer
+from train.train_snli_ve import SNLIVETrainer
+from train.train_vcr import VCRTrainer
 
 from train.train_mscoco_detection import train_mscoco_detection
 
@@ -48,10 +43,7 @@ vqa_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_vqa,
-        'eval_forgetting_method': eval_vqa_forgetting,
-        'batch_collate_fn': vqa_batch_collate,
-        'get_train_dataset_method': get_vqa_train_dataset,
+        'task_trainer': VQATrainer,
         'random_baseline_score': 0.0
 }
 
@@ -67,10 +59,7 @@ nlvr_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_nlvr2,
-        'eval_forgetting_method': eval_nlvr2_forgetting,
-        'batch_collate_fn': nlvr2_batch_collate,
-        'get_train_dataset_method': get_nlvr2_train_dataset,
+        'task_trainer': NLVR2Trainer,
         'random_baseline_score': 50.0
 }
 
@@ -87,10 +76,7 @@ snli_ve_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_snli_ve,
-        'eval_forgetting_method': eval_snli_ve_forgetting,
-        'batch_collate_fn': snlive_batch_collate,
-        'get_train_dataset_method': get_snli_ve_train_dataset,
+        'task_trainer': SNLIVETrainer,
         'random_baseline_score': 33.33
 }
 
@@ -108,10 +94,7 @@ vcr_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_vcr,
-        'eval_forgetting_method': eval_vcr_forgetting,
-        'batch_collate_fn': vcr_batch_collate,
-        'get_train_dataset_method': get_vcr_train_dataset,
+        'task_trainer': VCRTrainer,
         'random_baseline_score': 25.0
 }
 

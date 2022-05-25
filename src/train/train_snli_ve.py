@@ -31,198 +31,189 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-def get_snli_ve_train_dataset(args, task_configs, model_config, tokenizer):
+class SNLIVETrainer:
 
-    snli_ve_config = task_configs['snli-ve']
-    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
+    def __init__(self, args, task_configs, model_config, tokenizer, device):
 
-    # Load Flickr30K Images dataset for image data backbone
-    images_source = snli_ve_config['images_source']
-    flickr30k_config = task_configs[images_source]
-    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
+        self.args = args
+        self.tokenizer = tokenizer
+        self.device = device
 
-    visual_mode = model_config['visual_mode']
-    snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
-                                                        data_dir=data_dir,
-                                                        images_dataset=images_dataset,
-                                                        split='train',
-                                                        tokenizer=tokenizer,
-                                                        visual_mode=visual_mode)
-    return snli_ve_train_dataloader.dataset
+        self.snli_ve_config = task_configs['snli-ve']
+        self.data_dir = os.path.join(args.mcl_data_dir, self.snli_ve_config['data_dir'])
 
-def train_snli_ve(args, model, task_configs, model_config, tokenizer, device, replay_memory=None):
+        # Load Flickr30K Images dataset for image data backbone
+        images_source = self.snli_ve_config['images_source']
+        flickr30k_config = task_configs[images_source]
+        images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
 
-    snli_ve_config = task_configs['snli-ve']
-    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
-    num_labels = snli_ve_config['num_labels']
+        # Model-specific stuff
+        self.visual_mode = model_config['visual_mode']
+        self.batch2inputs_converter = model_config['batch2inputs_converter']
 
-    # Load Flickr30K Images dataset for image data backbone
-    images_source = snli_ve_config['images_source']
-    flickr30k_config = task_configs[images_source]
-    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
+        # Create dataloaders for training and validation
+        self.snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
+                                                                 data_dir=self.data_dir,
+                                                                 images_dataset=images_dataset,
+                                                                 split='train',
+                                                                 tokenizer=self.tokenizer,
+                                                                 visual_mode=self.visual_mode)
 
-    # Create model
-    visual_mode = model_config['visual_mode']
-    batch2inputs_converter = model_config['batch2inputs_converter']
-    model.to(device)
-    if args.cl_algorithm == 'adapter':
-        model.set_active_adapters("snli-ve")
+        self.snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
+                                                               data_dir=self.data_dir,
+                                                               images_dataset=images_dataset,
+                                                               split='dev',
+                                                               tokenizer=tokenizer,
+                                                               visual_mode=self.visual_mode)
 
-    # Create dataloaders for training and validation
-    snli_ve_train_dataloader = build_snli_ve_dataloader(args=args,
-                                                        data_dir=data_dir,
-                                                        images_dataset=images_dataset,
-                                                        split='train',
-                                                        tokenizer=tokenizer,
-                                                        visual_mode=visual_mode)
+        # Training hyperparameters
+        self.num_epochs = self.snli_ve_config['num_epochs']
+        self.lr = self.snli_ve_config['lr']
+        self.adam_epsilon = self.snli_ve_config['adam_epsilon']
+        self.weight_decay = self.snli_ve_config['weight_decay']
+        self.loss_criterion = nn.CrossEntropyLoss()
+        self.max_steps = len(self.snli_ve_train_dataloader) * self.num_epochs
+        self.warmup_ratio = 0.1 # TODO remove hard code
 
-    snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
-                                              data_dir=data_dir,
-                                              images_dataset=images_dataset,
-                                              split='dev',
-                                              tokenizer=tokenizer,
-                                              visual_mode=visual_mode)
+    def get_train_dataloader(self):
+        return self.snli_ve_train_dataloader
 
-    # Training hyperparameters
-    num_epochs = snli_ve_config['num_epochs']
-    lr = snli_ve_config['lr']
-    adam_epsilon = snli_ve_config['adam_epsilon']
-    weight_decay = snli_ve_config['weight_decay']
+    def get_collate_fn(self):
+        return self.snli_ve_train_dataloader.collate_fn
 
-    # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss(reduction='mean')
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L236
-    optimizer = AdamW(optimizer_grouped_parameters, lr=lr, eps=adam_epsilon, betas=(0.9, 0.98))
-    # Create Scheduler
-    # https://github.com/dandelin/ViLT/blob/master/vilt/modules/vilt_utils.py#L263
-    max_steps = len(snli_ve_train_dataloader) * num_epochs
-    warmup_ratio = 0.1 # TODO remove hard code
-    scheduler = get_polynomial_decay_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=int(max_steps * warmup_ratio),
-        num_training_steps=max_steps,
-        lr_end=0,
-        power=1,
-    )
+    def forward_pass(self, model, batch, do_eval=False):
 
-    if args.cl_algorithm == 'experience_replay':
-        assert replay_memory is not None
-        do_replay = replay_memory.do_replay()
-
-    best_score = 0
-    best_model = {
-        'epoch': 0,
-        'model': copy.deepcopy(model), #model.state_dict(),
-        'optimizer_state': optimizer.state_dict()
-    }
-
-    model.zero_grad()
-    model.train()
-    for epoch in range(num_epochs):
-        # Training loop for epoch
-        for step, batch in enumerate(tqdm(snli_ve_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
-            inputs = batch2inputs_converter(batch)
-            labels = batch['labels'].to(device)
-
-            #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
+        inputs = self.batch2inputs_converter(batch)
+        if do_eval is True:
+            with torch.no_grad():
+                output = model(task_key='snli-ve', **inputs)
+        else:
             output = model(task_key='snli-ve', **inputs)
-            logits = output[1]
-            # https://github.com/dandelin/ViLT/blob/master/vilt/modules/objectives.py#L317
-            loss = loss_criterion(logits, labels)
+        return output
 
+
+    def train_step(self, model, batch, optimizer=None, scheduler=None, ewc=None):
+
+        output = self.forward_pass(model, batch)
+        logits = output[1]
+        target = batch['labels'].to(self.device)
+        loss = self.loss_criterion(logits, target)
+
+        if ewc is not None and ewc.do_ewc() is True:
+            ewc_task, ewc_loss = ewc.compute_ewc_loss(model)
+            total_loss = loss + ewc_loss
+            total_loss.backward()
+        else:
+            ewc_task = None
+            ewc_loss = None
             loss.backward()
 
+        if optimizer is not None:
             optimizer.step()
-            scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
             optimizer.zero_grad()
 
-            if (step + 1) % 100 == 0:
-                wandb.log({'snli-ve': {'loss': loss.item()}})
+        return loss, output, ewc_task, ewc_loss
 
-            if args.cl_algorithm == 'experience_replay' and do_replay is True:
-                if (step + 1) % args.replay_frequency == 0:
-                    sampled_replay_task = replay_memory.sample_replay_task()
-                    replay_args = {'model': model,
-                                   'task_configs': task_configs,
-                                   'batch2inputs_converter': batch2inputs_converter,
-                                   'device': device}
-                    replay_loss = replay_memory.run_replay_step(sampled_replay_task, **replay_args)
-                    logger.info("{} replay step: loss = {:.5f}".format(task_configs[sampled_replay_task]['task_name'], replay_loss))
+    def create_optimizer(self, model):
 
-        # Do evaluation after epoch
-        eval_score = eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter)
-        logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-        wandb.log({'snli-ve': {'dev_score': eval_score}})
-        if eval_score > best_score:
-            logger.info("New best evaluation score: {:.2f}".format(eval_score))
-            best_score = eval_score
-            best_model['epoch'] = epoch
-            best_model['model'] = copy.deepcopy(model)
+        no_decay = ['bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': self.weight_decay},
+            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            ]
+        optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
+        return optimizer
 
-    return best_score, best_model, snli_ve_train_dataloader.dataset
+    def train(self, model, replay_memory=None, ewc=None):
 
-def eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter):
+        model.to(self.device)
+        if self.args.cl_algorithm == 'adapter':
+            model.set_active_adapters("snli-ve")
+        elif self.args.cl_algorithm == 'experience_replay':
+            assert replay_memory is not None
+            do_replay = replay_memory.do_replay()
+        elif self.args.cl_algorithm == 'ewc':
+            assert ewc is not None
+            do_ewc = ewc.do_ewc()
 
-    model.eval()
-    eval_correct = 0
+        # Create optimizer
+        optimizer = self.create_optimizer(model)
+        # Create Scheduler
+        scheduler = get_polynomial_decay_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=int(self.max_steps * self.warmup_ratio),
+            num_training_steps=self.max_steps,
+            lr_end=0,
+            power=1,
+        )
 
-    for step, batch in enumerate(tqdm(snli_ve_dev_dataloader, desc='Evaluating on SNLI-VE dev set')):
-        inputs = batch2inputs_converter(batch)
-        labels = batch['labels'].to(device)
+        best_score = 0
+        best_model = {
+            'epoch': 0,
+            'model': copy.deepcopy(model), #model.state_dict(),
+            'optimizer_state': optimizer.state_dict()
+        }
 
-        #output = model(images=images, texts=texts)      # TODO: Create abstraction that can convert batch keys into model input keys for all models
-        with torch.no_grad():
-            output = model(task_key='snli-ve', **inputs)
-        logits = output[1]
+        model.zero_grad()
+        for epoch in range(self.num_epochs):
+            # Training loop for epoch
 
-        batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
-        eval_correct += batch_scores.sum().item()
+            model.train()
+            for step, batch in enumerate(tqdm(self.snli_ve_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
 
-    eval_acc = eval_correct/len(snli_ve_dev_dataloader.dataset)*100.0
+                loss, output, ewc_task, ewc_loss = self.train_step(model, batch, optimizer, scheduler, ewc)
 
-    model.train()
-    return eval_acc
+                if self.args.cl_algorithm == 'experience_replay' and do_replay is True:
+                    if (step + 1) % self.args.replay_frequency == 0:
+                        sampled_replay_task = replay_memory.sample_replay_task()
+                        replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
-def eval_snli_ve_forgetting(args, model, model_path, task_configs, model_config, tokenizer, device):
+                if (step + 1) % 100 == 0:
+                    log_dict = {'snli-ve': {'loss': loss.item()}}
+                    if ewc is not None and do_ewc is True:
+                        log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
+                    wandb.log(log_dict)
 
-    snli_ve_config = task_configs['snli-ve']
-    data_dir = os.path.join(args.mcl_data_dir, snli_ve_config['data_dir'])
-    num_labels = snli_ve_config['num_labels']
+            # Do evaluation after epoch
+            eval_score = self.eval(model)
+            logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+            wandb.log({'snli-ve': {'dev_score': eval_score}})
+            if eval_score > best_score:
+                logger.info("New best evaluation score: {:.2f}".format(eval_score))
+                best_score = eval_score
+                best_model['epoch'] = epoch
+                best_model['model'] = copy.deepcopy(model)
 
-    # Load Flickr30K Images dataset for image data backbone
-    images_source = snli_ve_config['images_source']
-    flickr30k_config = task_configs[images_source]
-    images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
+        return best_score, best_model
 
-    # Create model
-    visual_mode = model_config['visual_mode']
-    batch2inputs_converter = model_config['batch2inputs_converter']
-    model.to(device)
-    if args.cl_algorithm == 'adapter':
-        model.set_active_adapters("snli-ve")
+    def eval(self, model):
 
-    snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
-                                              data_dir=data_dir,
-                                              images_dataset=images_dataset,
-                                              split='dev',
-                                              tokenizer=tokenizer,
-                                              visual_mode=visual_mode)
+        model.eval()
+        eval_score = 0
 
-    # Load model with encoder weights from encoder_path, and classifier weights from model_path
-    model.load_state_dict(torch.load(model_path))
-    logger.info("Loaded model checkpoint from {}".format(model_path))
+        for step, batch in enumerate(tqdm(self.snli_ve_dev_dataloader, desc='Evaluating on SNLI-VE val set')):
+            output = self.forward_pass(model, batch, do_eval=True)
 
-    # Load encoder weights from encoder checkpoint
-    #ckpt_encoder_dict = torch.load(encoder_path)
-    #model_encoder_dict = model.get_encoder().state_dict()
+            logits = output[1]
+            batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
+            eval_score += batch_scores.sum().item()
 
-    #for k in ckpt_encoder_dict.keys():
-    #    if model_encoder_dict[k].shape == ckpt_encoder_dict[k].shape:
-    #        model_encoder_dict[k].copy_(ckpt_encoder_dict[k])
+        eval_score = eval_score/len(self.snli_ve_dev_dataloader.dataset)*100.0
 
-    return eval_snli_ve(args, model, snli_ve_dev_dataloader, device, batch2inputs_converter)
+        model.train()
+        return eval_score
+
+    def eval_forgetting(self, model, model_path):
+
+        model.to(self.device)
+        if self.args.cl_algorithm == 'adapter':
+            model.set_active_adapters("snli-ve")
+
+        # Load model with encoder weights from encoder_path, and classifier weights from model_path
+        model.load_state_dict(torch.load(model_path))
+        logger.info("Loaded model checkpoint from {}".format(model_path))
+
+        return self.eval(model)
+
