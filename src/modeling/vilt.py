@@ -378,17 +378,17 @@ def load_vilt_encoder(pretrained_vilt_name, device):
     logger.info("Successfully loaded pretrained ViLT model")
     return vilt_encoder
 
-def convert_batch_to_model_input_dict(batch):
+def convert_batch_to_vilt_input_dict(batch):
 
     return {'images': batch['images'],
             'texts': batch['raw_texts']}
 
-def convert_seq_batch_to_model_input_dict(batch, mean_image):
+def convert_seq_batch_to_vilt_input_dict(batch, mean_image):
 
     return {'images': [mean_image],
             'texts': list(batch[0])}
 
-def convert_mc_batch_to_model_input_dict(batch, mean_image):
+def convert_mc_batch_to_vilt_input_dict(batch, mean_image):
     texts_a, texts_b = batch[0], batch[1]
     bs = len(texts_a)
 
