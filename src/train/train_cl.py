@@ -27,7 +27,7 @@ from modeling import load_encoder_map, continual_learner_map
 
 from cl_algorithms import ExperienceReplayMemory, EWC
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
-from configs.model_configs import model_configs
+from configs.model_configs import model_configs, ALLOWED_CL_ENCODERS
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from configs.adapter_configs import ADAPTER_MAP
 from utils.seed_utils import set_seed
@@ -44,7 +44,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
+    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=ALLOWED_CL_ENCODERS,
                         help="The name of the base pretrained encoder.")
     parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
                         help="Name of pretrained model weights to load.")
@@ -205,6 +205,12 @@ def main():
         results = []
         if os.path.isfile(results_file):
             results = json.load(open(results_file))
+            logger.info("-"*100)
+            logger.info("Cached results:")
+            for i, r in enumerate(results):
+                task_key = r['task_key']
+                best_score = r['best_score']
+                logger.info("Task #{}: {} - best score = {:.2f}".format(i+1, task_configs[task_key]['task_name'], best_score))
         task_trainers = {}
 
         logger.info("-"*100)
