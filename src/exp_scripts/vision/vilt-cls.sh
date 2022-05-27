@@ -3,17 +3,16 @@ export TOKENIZERS_PARALLELISM=false
 
 task_arr=("places365") #"inat2019" "places365" "imagenet"
 nshot_arr=(16 32)
-subseed_arr=(10) # 50 100)
+subseed_arr=(100) # 50 100)
 ckpt_arr=(
-#    "dandelin/vilt-b32-mlm" \
-#    "/data/experiments/MCL/vilt-singletask_ft-task0_vqa/checkpoints/task0_vqa/encoder" \
+    "dandelin/vilt-b32-mlm" \
+    "/data/experiments/MCL/vilt-singletask_ft-task0_vqa/checkpoints/task0_vqa/encoder" \
+    "/data/experiments/MCL/vilt-singletask_ft-task0_snli-ve/checkpoints/task0_snli-ve/encoder" \
+    "/data/experiments/MCL/vilt-singletask_ft-task0_nlvr2/checkpoints/task0_nlvr2/encoder" \
+    "/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task1_nlvr2/encoder" \
     "/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task2_snli-ve/encoder" \
+    "/data/experiments/MCL/vilt-experience_replay-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task1_nlvr2/encoder" \
     "/data/experiments/MCL/vilt-experience_replay-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task2_snli-ve/encoder" \
-    "/data/experiments/MCL/vilt-adapter_houlsby-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task2_snli-ve/encoder" \
-    "/data/experiments/MCL/vilt-experience_replay-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task0_vqa/encoder" \
-    "/data/experiments/MCL/vilt-adapter_houlsby-task0_vqa-task1_nlvr2-task2_snli-ve-task3_vcr/checkpoints/task0_vqa/encoder" \
-#    "/data/experiments/MCL/vilt-singletask_ft-task0_snli-ve/checkpoints/task0_snli-ve/encoder" \
-#    "/data/experiments/MCL/vilt-singletask_ft-task0_nlvr2/checkpoints/task0_nlvr2/encoder" \
 #    "/data/experiments/MCL/vilt-singletask_ft-task0_vcr/checkpoints/task0_vcr/encoder" \
     )
 

@@ -19,6 +19,7 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from torch import nn
+from sklearn.metrics import f1_score
 from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 from transformers import BertTokenizer
@@ -38,7 +39,7 @@ logger.setLevel(logging.DEBUG)
 
 def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     upstream_name = args.pretrained_model_name.split('/')[-2]
-    for short in ['adapter', 'ewc', 'replay', 'sequent']:
+    for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
         if short in args.pretrained_model_name:
             upstream_name += f"_{short}"
             break
@@ -47,7 +48,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
-    n_shot = args.num_shot
+    n_shot = args.num_shot if args.task_name == 'coco-cls' else int(args.num_shot)
     subsample_seed = args.subsample_seed
     output_dir = args.output_dir
 
@@ -69,8 +70,12 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
         from data.vision_datasets.places365_dataset import get_data_loader
     elif args.task_name == 'inat2019':
         from data.vision_datasets.inat2019_dataset import get_data_loader
+    elif args.task_name == 'coco-cls':
+        from data.vision_datasets.coco_cls_dataset import get_data_loader
     else:
         raise NotImplementedError("get_data_loader not impelmented for this task!")
+
+    eval_fn = eval_coco if args.task_name == 'coco-cls' else eval_acc
 
     train_dataloader = get_data_loader(
         args,
@@ -99,7 +104,11 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     warmup_ratio = task_config['warmup_ratio']
 
     # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss()
+    if args.task_name == 'coco-cls':
+        loss_criterion = nn.CrossEntropyLoss()
+    else:
+        loss_criterion = nn.BCEWithLogitsLoss()
+
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
@@ -141,7 +150,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
 
         # Eval on the val set and update the best model
         if epoch > 5 and epoch%2 == 0:
-            eval_score = eval(args, model, val_dataloader, device, batch2inputs_converter)
+            eval_score = eval_fn(args, model, val_dataloader, device, batch2inputs_converter)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch, eval_score))
 
             if eval_score > best_score:
@@ -151,7 +160,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
                 best_model = copy.deepcopy(model)
 
     # eval the best model on the test set & write the results
-    test_score = eval(args, best_model, test_dataloader, device, batch2inputs_converter)
+    test_score = eval_fn(args, best_model, test_dataloader, device, batch2inputs_converter)
     write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir)
 
 
@@ -171,7 +180,33 @@ def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, ta
         outfile.write(json.dumps(all_scores))
 
 
-def eval(args, model, eval_dataloader, device, batch2inputs_converter):
+
+def eval_coco(args, model, eval_dataloader, device, batch2inputs_converter):
+
+    model.eval()
+    act_fn = nn.Sigmoid()
+
+    all_labels = torch.zeros((len(eval_dataloader.dataset), 80), dtype=torch.bool)
+    all_preds = all_labels.clone()
+    offset = 0
+    for step, batch in enumerate(tqdm(eval_dataloader, desc='Evaluating...')):
+        labels = batch['labels']
+        inputs = batch2inputs_converter(batch)
+        with torch.no_grad():
+            logits = model(**inputs)
+            preds = act_fn(logits) > 0.5
+        all_labels[offset: offset+len(labels)] = labels.bool().cpu()
+        all_preds[offset: offset+len(labels)] = preds.cpu()
+        offset += len(labels)
+
+    f1 = f1_score(all_labels, all_preds, average='micro')*100.0
+    logger.info(f'Eval_F1: {f1:.3f}')
+
+    model.train()
+    return f1
+
+
+def eval_acc(args, model, eval_dataloader, device, batch2inputs_converter):
 
     model.eval()
     eval_score = 0
@@ -220,8 +255,8 @@ def main():
                         help="Random seed.")
 
     # only used by few-shot downstream tasks
-    parser.add_argument("--num_shot", type=int,
-                        help="Number of training data (per class)")
+    parser.add_argument("--num_shot", type=float,
+                        help="Number of training data per class OR the ratio of the original training set")
     parser.add_argument("--subsample_seed", type=int,
                         help="Random seed for few-shot sampling.")
 

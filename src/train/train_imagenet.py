@@ -38,7 +38,7 @@ logger.setLevel(logging.DEBUG)
 
 def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     upstream_name = args.pretrained_model_name.split('/')[-2]
-    for short in ['adapter', 'ewc', 'replay', 'sequent']:
+    for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
         if short in args.pretrained_model_name:
             upstream_name += f"_{short}"
             break

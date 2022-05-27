@@ -14,21 +14,6 @@ mscoco_config = {
         'data_dir': 'ms-coco/',
 }
 
-mscoco_detection_config = {
-        'task_name': 'MLIC',
-        'annotation_dir': 'ms-coco/detections/annotations/',
-        'images_source': 'ms-coco',
-        'splits': ['train', 'val'],
-        'num_labels': 80,
-        'num_images': 1,
-        'model_type': 'classification',
-        'num_epochs': 10,
-        'lr': 1e-4,
-        'weight_decay': 1e-2,
-        'adam_epsilon': 1e-8,
-        'train_method': train_mscoco_detection
-}
-
 flickr_config = {
     'data_dir': 'flickr30k/',
 }
@@ -209,12 +194,23 @@ inat2019_config = {
         'warmup_ratio': 0.1,
 }
 
+coco_cls_config = {
+        'task_name': 'coco',
+        'data_dir': '/data/datasets/MCL/ms-coco',
+        'num_labels': 80,
+        'model_type': 'classification',
+        'num_epochs': 10,
+        'lr': 1e-4,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+}
+
 task_configs = {
     'ms-coco': mscoco_config,
     'flickr30k': flickr_config,
     'vqa': vqa_config,
     'nlvr2': nlvr_config,
-    'ms-coco_detection': mscoco_detection_config,
     'snli-ve': snli_ve_config,
     'imdb': imdb_config,
     'sst2': sst2_config,
@@ -224,4 +220,5 @@ task_configs = {
     'imagenet': imagenet_config,
     'places365': places365_config,
     'inat2019': inat2019_config,
+    'coco-cls': coco_cls_config,
 }
