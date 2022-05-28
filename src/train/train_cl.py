@@ -225,7 +225,15 @@ def main():
 
                 # If we find model checkpoint for this task, load the checkpoint and move onto next CL task
                 logger.info("Found checkpoint for task {}!".format(task_name))
-                model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
+                try:
+                    model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
+                except Exception as e:
+                    ckpt_state_dict = torch.load(os.path.join(task_output_dir, 'model'))
+                    initialized = {k: False for k in model.state_dict().keys()}
+                    for k in ckpt_state_dict.keys():
+                        model.state_dict()[k].copy_(ckpt_state_dict[k])
+                        initialized[k] = True
+                    logger.info("Uninitialized keys: {}".format(','.join([k for k in initialized.keys() if initialized[k] is False])))
                 logger.info("Loaded model checkpoint from task {}! Moving on to next task...".format(task_name))
 
                 task_trainer_class = task_configs[task_key]['task_trainer']
