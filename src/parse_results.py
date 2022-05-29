@@ -8,7 +8,12 @@ import glob
 assert len(sys.argv)==2, "input task name"
 task_name = sys.argv[1]
 
-fns = glob.glob(f"/data/experiments/MCL/vision_only/{task_name}_*")
+if task_name in ['coco', 'imagenet', 'inat2019', 'places365']:
+    dir_name = 'vision_only'
+else:
+    dir_name = 'lang_only'
+
+fns = glob.glob(f"/data/experiments/MCL/{dir_name}/{task_name}_*")
 for fn in fns:
     with open(fn, "r") as f:
         rdict = json.load(f)
