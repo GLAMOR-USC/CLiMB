@@ -27,7 +27,7 @@ from modeling import load_encoder_map, continual_learner_map
 
 from cl_algorithms import ExperienceReplayMemory, EWC
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
-from configs.model_configs import model_configs
+from configs.model_configs import model_configs, ALLOWED_CL_ENCODERS
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from configs.adapter_configs import ADAPTER_MAP
 from utils.seed_utils import set_seed
@@ -44,7 +44,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
+    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=ALLOWED_CL_ENCODERS,
                         help="The name of the base pretrained encoder.")
     parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
                         help="Name of pretrained model weights to load.")
@@ -205,6 +205,12 @@ def main():
         results = []
         if os.path.isfile(results_file):
             results = json.load(open(results_file))
+            logger.info("-"*100)
+            logger.info("Cached results:")
+            for i, r in enumerate(results):
+                task_key = r['task_key']
+                best_score = r['best_score']
+                logger.info("Task #{}: {} - best score = {:.2f}".format(i+1, task_configs[task_key]['task_name'], best_score))
         task_trainers = {}
 
         logger.info("-"*100)
@@ -219,7 +225,24 @@ def main():
 
                 # If we find model checkpoint for this task, load the checkpoint and move onto next CL task
                 logger.info("Found checkpoint for task {}!".format(task_name))
-                model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
+                try:
+                    model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))
+                except Exception as e:
+                    ckpt_state_dict = torch.load(os.path.join(task_output_dir, 'model'))
+                    initialized = {k: False for k in model.state_dict().keys()}
+                    for k in ckpt_state_dict.keys():
+                        #if k == 'viltbert_encoder.vilt.embeddings.token_type_embeddings.weight':
+                        #    emb_data = ckpt_state_dict['viltbert_encoder.vilt.embeddings.token_type_embeddings.weight']
+                        #    model.viltbert_encoder.vilt.embeddings.token_type_embeddings.weight.data[0, :] = emb_data[0, :]
+                        #    model.viltbert_encoder.vilt.embeddings.token_type_embeddings.weight.data[1, :] = emb_data[1, :]
+                        #    model.viltbert_encoder.vilt.embeddings.token_type_embeddings.weight.data[2, :] = emb_data[1, :]
+                        #    logger.info("Copied token type embeddings")
+                        #else:
+                        model.state_dict()[k].copy_(ckpt_state_dict[k])
+                        initialized[k] = True
+                    logger.info("Uninitialized keys: {}".format(','.join([k for k in initialized.keys() if initialized[k] is False])))
+                    torch.save(model.state_dict(), os.path.join(task_output_dir, 'model'))
+                    logger.info("Saved model with uninitialized keys as new checkpoint")
                 logger.info("Loaded model checkpoint from task {}! Moving on to next task...".format(task_name))
 
                 task_trainer_class = task_configs[task_key]['task_trainer']
