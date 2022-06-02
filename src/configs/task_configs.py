@@ -1,7 +1,7 @@
 from train.train_vqa import VQATrainer
-from train.train_nlvr2 import NLVR2Trainer
-from train.train_snli_ve import SNLIVETrainer
-from train.train_vcr import VCRTrainer
+from train.train_nlvr2 import NLVR2Trainer, LowShotNLVR2Trainer
+from train.train_snli_ve import SNLIVETrainer, LowShotSNLIVETrainer
+from train.train_vcr import VCRTrainer, LowShotVCRTrainer
 
 from train.train_mscoco_detection import train_mscoco_detection
 
@@ -44,7 +44,10 @@ vqa_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'task_trainer': VQATrainer,
-        'random_baseline_score': 0.0
+        'random_baseline_score': 0.0,
+        'low_shot_config': {'task_trainer': LowShotVCRTrainer,
+                            'type': 'percentage',
+                            'percentage':0.05,}
 }
 
 nlvr_config = {
@@ -60,7 +63,12 @@ nlvr_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'task_trainer': NLVR2Trainer,
-        'random_baseline_score': 50.0
+        'random_baseline_score': 50.0,
+        'low_shot_config': {'task_trainer': LowShotNLVR2Trainer,
+                            'type': 'n-shot-per-class',
+                            'num_shots_per_class': 2048,
+                            'eval_epochs': [6, 8, 10]
+                            }
 }
 
 snli_ve_config = {
@@ -77,7 +85,12 @@ snli_ve_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'task_trainer': SNLIVETrainer,
-        'random_baseline_score': 33.33
+        'random_baseline_score': 33.33,
+        'low_shot_config': {'task_trainer': LowShotSNLIVETrainer,
+                            'type': 'n-shot-per-class',
+                            'num_shots_per_class': 2048,
+                            'eval_epochs': [1, 3, 4]
+                            }
 }
 
 vcr_config = {
@@ -95,7 +108,12 @@ vcr_config = {
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
         'task_trainer': VCRTrainer,
-        'random_baseline_score': 25.0
+        'random_baseline_score': 25.0,
+        'low_shot_config': {'task_trainer': LowShotVCRTrainer,
+                            'type': 'percentage',
+                            'percentage':0.05,
+                            'eval_epochs': [6, 8, 10]
+                            }
 }
 
 imdb_config = {

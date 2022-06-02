@@ -46,6 +46,7 @@ class SnliVEDataset(Dataset):
         self.annotations_file = os.path.join(data_dir, 'snli_ve_{}.jsonl'.format(split))
         self.categories = ['entailment', 'contradiction', 'neutral']
         self.cat2label = {cat: i for i, cat in enumerate(self.categories)}
+        self.num_labels = len(self.categories)
 
         self.cached_data_file = os.path.join(data_dir, 'cached_vqa_data', 'snli-ve_{}.pkl'.format(split))
         if os.path.isfile(self.cached_data_file):
@@ -89,6 +90,21 @@ class SnliVEDataset(Dataset):
         label = example['label']
 
         return hypothesis, input_ids, image, label
+
+
+    def convert_to_low_shot(self, num_shots_per_class):
+
+        assert self.split == 'train'
+        logger.info("Converting SNLI-VE train split into low-shot dataset, with {} examples per class...".format(num_shots_per_class))
+        new_data = []
+        for i in range(self.num_labels):
+            i_examples = [d for d in self.data if d['label'] == i]
+            low_shot_examples = random.sample(i_examples, num_shots_per_class)
+            new_data.extend(low_shot_examples)
+        self.data = new_data
+        self.n_examples = len(self.data)
+        logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
+
 
 def snlive_batch_collate(batch, visual_mode):
 
