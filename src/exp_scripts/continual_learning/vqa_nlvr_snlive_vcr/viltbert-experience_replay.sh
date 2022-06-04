@@ -13,4 +13,4 @@ python -m train.train_cl --encoder_name viltbert \
 			--do_eval \
                         --output_dir /data/experiments/MCL/ \
                         --wandb_project_name vl-cl \
-                        --batch_size 64
+                        --batch_size 60
