@@ -89,7 +89,7 @@ snli_ve_config = {
         'low_shot_config': {'task_trainer': LowShotSNLIVETrainer,
                             'type': 'n-shot-per-class',
                             'num_shots_per_class': 2048,
-                            'eval_epochs': [1, 3, 4]
+                            'eval_epochs': [2, 4, 5]
                             }
 }
 
@@ -112,7 +112,7 @@ vcr_config = {
         'low_shot_config': {'task_trainer': LowShotVCRTrainer,
                             'type': 'percentage',
                             'percentage':0.05,
-                            'eval_epochs': [6, 8, 10]
+                            'eval_epochs': [2, 4, 6, 8, 10]
                             }
 }
 

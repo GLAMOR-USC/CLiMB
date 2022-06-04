@@ -220,7 +220,7 @@ class LowShotVCRTrainer(VCRTrainer):
 
         super(LowShotVCRTrainer, self).__init__(args, task_configs, model_config, tokenizer, device)
         self.low_shot_config = low_shot_config
-        self.eval_epochs = low_shot_config['eval_epochs']
+        self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
 
         self.vcr_train_dataloader.dataset.convert_to_low_shot(low_shot_percentage=low_shot_config['percentage'])
         self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs

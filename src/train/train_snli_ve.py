@@ -224,7 +224,7 @@ class LowShotSNLIVETrainer(SNLIVETrainer):
 
         super(LowShotSNLIVETrainer, self).__init__(args, task_configs, model_config, tokenizer, device)
         self.low_shot_config = low_shot_config
-        self.eval_epochs = low_shot_config['eval_epochs']
+        self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
 
         self.snli_ve_train_dataloader.dataset.convert_to_low_shot(num_shots_per_class=low_shot_config['num_shots_per_class'])
         self.max_steps = len(self.snli_ve_train_dataloader) * self.num_epochs

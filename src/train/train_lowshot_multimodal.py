@@ -180,13 +180,15 @@ def main():
         task_key = args.ordered_cl_tasks[0]
         low_shot_model = copy.deepcopy(model)
         low_shot_eval_score, low_shot_config = train_low_shot(args, low_shot_model, task_key, model_config, tokenizer, device)
-        logger.info("Best {} evaluation score = {:.2f}".format(low_shot_task_key, low_shot_eval_score))
+        logger.info("Best {} evaluation score = {:.2f}".format(task_key, low_shot_eval_score))
 
         # --------------------- Save low-shot results ---------------------
+        config_copy = copy.deepcopy(low_shot_config)
+        config_copy.pop('task_trainer', None)
         task_results = {
             'task_key': task_key,
-            'best_low_shot_score': best_eval_score,
-            'low_shot_config': copy_(low_shot_config).pop('task_trainer', None),
+            'best_low_shot_score': low_shot_eval_score,
+            'low_shot_config': config_copy,
         }
         results.append(task_results)
         json.dump(results, open(results_file, 'w'))
@@ -226,14 +228,17 @@ def main():
                 low_shot_eval_score, low_shot_config = train_low_shot(args, low_shot_model, low_shot_task_key, model_config, tokenizer, device)
                 logger.info("Best {} evaluation score = {:.2f}".format(low_shot_task_key, low_shot_eval_score))
 
+
                 # --------------------- Save low-shot results so far ---------------------
+                config_copy = copy.deepcopy(low_shot_config)
+                config_copy.pop('task_trainer', None)
                 task_results = {
                     'task_num': task_num,
                     'task_key': task_key,
                     'task_num': low_shot_task_num,
                     'task_key': low_shot_task_key,
-                    'best_low_shot_score': best_eval_score,
-                    'low_shot_config': copy_(low_shot_config).pop('task_trainer', None),
+                    'best_low_shot_score': low_shot_eval_score,
+                    'low_shot_config': config_copy,
                 }
                 results.append(task_results)
                 json.dump(results, open(results_file, 'w'))
