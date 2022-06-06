@@ -47,7 +47,8 @@ vqa_config = {
         'random_baseline_score': 0.0,
         'low_shot_config': {'task_trainer': LowShotVQATrainer,
                             'type': 'percentage',
-                            'percentage':0.05,}
+                            'percentage':0.05,
+                            'eval_epochs': [6, 8, 10]}
 }
 
 nlvr_config = {
