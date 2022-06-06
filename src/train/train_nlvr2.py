@@ -52,7 +52,7 @@ class NLVR2Trainer:
                                                     data_dir=self.data_dir,
                                                     split='train',
                                                     visual_mode=self.visual_mode)
-    
+
         self.nlvr_val_dataloader = build_nlvr2_dataloader(args=args,
                                                      data_dir=self.data_dir,
                                                      split='val',
@@ -208,3 +208,57 @@ class NLVR2Trainer:
         logger.info("Loaded model checkpoint from {}".format(model_path))
 
         return self.eval(model)
+
+class LowShotNLVR2Trainer(NLVR2Trainer):
+
+    def __init__(self, args, task_configs, model_config, tokenizer, device, low_shot_config):
+
+        super(LowShotNLVR2Trainer, self).__init__(args, task_configs, model_config, tokenizer, device)
+        self.low_shot_config = low_shot_config
+        self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
+
+        self.nlvr_train_dataloader.dataset.convert_to_low_shot(num_shots_per_class=low_shot_config['num_shots_per_class'])
+        self.max_steps = len(self.nlvr_train_dataloader) * self.num_epochs
+
+    def train(self, model):
+
+        model.to(self.device)
+
+        # Create optimizer
+        optimizer = self.create_optimizer(model)
+        # Create Scheduler
+        scheduler = get_polynomial_decay_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=int(self.max_steps * self.warmup_ratio),
+            num_training_steps=self.max_steps,
+            lr_end=0,
+            power=1,
+        )
+
+        best_score = 0
+        best_model = {
+            'epoch': 0,
+            'model': copy.deepcopy(model), #model.state_dict(),
+            'optimizer_state': optimizer.state_dict()
+        }
+
+        model.zero_grad()
+        for epoch in range(self.num_epochs):
+            # Training loop for epoch
+
+            model.train()
+            for step, batch in enumerate(tqdm(self.nlvr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+                loss, output, _, _ = self.train_step(model, batch, optimizer, scheduler)
+
+            # Do evaluation after epoch
+            if epoch in self.eval_epochs:
+                eval_score = self.eval(model)
+                logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+                wandb.log({'nlvr': {'val_score': eval_score}})
+                if eval_score > best_score:
+                    logger.info("New best evaluation score: {:.2f}".format(eval_score))
+                    best_score = eval_score
+                    best_model['epoch'] = epoch
+                    best_model['model'] = copy.deepcopy(model)
+
+        return best_score, best_model

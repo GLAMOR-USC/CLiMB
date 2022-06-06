@@ -231,13 +231,6 @@ def main():
                     ckpt_state_dict = torch.load(os.path.join(task_output_dir, 'model'))
                     initialized = {k: False for k in model.state_dict().keys()}
                     for k in ckpt_state_dict.keys():
-                        #if k == 'viltbert_encoder.vilt.embeddings.token_type_embeddings.weight':
-                        #    emb_data = ckpt_state_dict['viltbert_encoder.vilt.embeddings.token_type_embeddings.weight']
-                        #    model.viltbert_encoder.vilt.embeddings.token_type_embeddings.weight.data[0, :] = emb_data[0, :]
-                        #    model.viltbert_encoder.vilt.embeddings.token_type_embeddings.weight.data[1, :] = emb_data[1, :]
-                        #    model.viltbert_encoder.vilt.embeddings.token_type_embeddings.weight.data[2, :] = emb_data[1, :]
-                        #    logger.info("Copied token type embeddings")
-                        #else:
                         model.state_dict()[k].copy_(ckpt_state_dict[k])
                         initialized[k] = True
                     logger.info("Uninitialized keys: {}".format(','.join([k for k in initialized.keys() if initialized[k] is False])))
