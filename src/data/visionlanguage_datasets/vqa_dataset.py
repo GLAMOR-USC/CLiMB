@@ -108,6 +108,8 @@ class VQADataset(Dataset):
 
             pkl.dump(self.data, open(self.cached_data_file, 'wb'))
 
+        self.n_examples = len(self.data)
+
         logger.info("Loaded VQAv2 {} dataset, with {} examples".format(self.split, len(self.data)))
 
     def __len__(self):
@@ -131,6 +133,18 @@ class VQADataset(Dataset):
         target_scores = target_tensor(self.num_labels, labels, scores)
 
         return question, input_ids, image, labels, target_scores, question_id
+
+    def convert_to_low_shot(self, low_shot_percentage):
+
+        assert self.split == 'train'
+        logger.info("Converting VQA train split into low-shot dataset, with {:.2f}% training samples...".format(low_shot_percentage*100.0))
+        n_low_shot_examples = int(low_shot_percentage*self.n_examples)
+
+        new_data = random.sample(self.data, n_low_shot_examples)
+        self.data = new_data
+        self.n_examples = len(self.data)
+
+        logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
 def vqa_batch_collate(batch, visual_mode):
 

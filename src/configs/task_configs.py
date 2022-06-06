@@ -1,4 +1,4 @@
-from train.train_vqa import VQATrainer
+from train.train_vqa import VQATrainer, LowShotVQATrainer
 from train.train_nlvr2 import NLVR2Trainer, LowShotNLVR2Trainer
 from train.train_snli_ve import SNLIVETrainer, LowShotSNLIVETrainer
 from train.train_vcr import VCRTrainer, LowShotVCRTrainer
@@ -45,7 +45,7 @@ vqa_config = {
         'warmup_ratio': 0.1,
         'task_trainer': VQATrainer,
         'random_baseline_score': 0.0,
-        'low_shot_config': {'task_trainer': LowShotVCRTrainer,
+        'low_shot_config': {'task_trainer': LowShotVQATrainer,
                             'type': 'percentage',
                             'percentage':0.05,}
 }
