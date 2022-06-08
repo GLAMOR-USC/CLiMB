@@ -209,7 +209,6 @@ def main():
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
     parser.add_argument("--model_catog", default='vilt-vl', type=str,
-                        choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc'],
                         help="The catogory for model class.")
     parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
                         help="Name of pretrained model weights to load.")
