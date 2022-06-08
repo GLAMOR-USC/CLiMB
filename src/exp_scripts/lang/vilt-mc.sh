@@ -3,7 +3,7 @@ export TOKENIZERS_PARALLELISM=false
 
 task_arr=("piqa" "commonsenseqa" "hellaswag")
 nshot_arr=(1024 4096)
-subseed_arr=(10)
+subseed_arr=(10 50 100)
 ckpt_arr=(
     "dandelin/vilt-b32-mlm" \
     "/data/experiments/MCL/vilt-singletask_ft-task0_vqa/checkpoints/task0_vqa/encoder" \

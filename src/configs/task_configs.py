@@ -81,7 +81,6 @@ imdb_config = {
         'task_name': 'imdb',
         'data_dir': None,
         'cache_dir': '/data/datasets/MCL/cached_datasets',
-        'splits': ['train', 'val'],
         'max_len': 160,
         'num_labels': 2,
         'model_type': 'classification',
@@ -96,7 +95,6 @@ sst2_config = {
         'task_name': 'sst2',
         'data_dir': None,
         'cache_dir': '/data/datasets/MCL/cached_datasets',
-        'splits': ['train', 'val'],
         'max_len': 40,
         'num_labels': 2,
         'model_type': 'classification',
@@ -111,7 +109,6 @@ sst2_config = {
 hellaswag_config = {
         'task_name': 'hellaswag',
         'data_dir': '/data/datasets/MCL/hellaswag',
-        'splits': ['train', 'val'],
         'max_len': 120,
         'num_labels': 4,
         'model_type': 'classification',
@@ -126,7 +123,6 @@ hellaswag_config = {
 commonsenseqa_config = {
         'task_name': 'commonsenseqa',
         'data_dir': '/data/datasets/MCL/commonsenseqa',
-        'splits': ['train', 'val'],
         'max_len': 80,
         'num_labels': 5,
         'model_type': 'classification',
@@ -141,7 +137,6 @@ commonsenseqa_config = {
 piqa_config = {
         'task_name': 'piqa',
         'data_dir': '/data/datasets/MCL/piqa',
-        'splits': ['train', 'val'],
         'max_len': 80,
         'num_labels': 2,
         'model_type': 'classification',
@@ -156,7 +151,6 @@ piqa_config = {
 imagenet_config = {
         'task_name': 'imagenet',
         'data_dir': '/data/datasets/MCL/ILSVRC2012',
-        'splits': ['train', 'val'],
         'num_labels': 1000,
         'model_type': 'classification',
         'num_epochs': 8,
@@ -170,7 +164,6 @@ imagenet_config = {
 places365_config = {
         'task_name': 'places365',
         'data_dir': '/data/datasets/MCL/Places365',
-        'splits': ['train', 'val'],
         'num_labels': 365,
         'model_type': 'classification',
         'num_epochs': 10,
@@ -184,7 +177,6 @@ places365_config = {
 inat2019_config = {
         'task_name': 'inat2019',
         'data_dir': '/data/datasets/MCL/iNat2019',
-        'splits': ['train', 'val'],
         'num_labels': 1010,
         'model_type': 'classification',
         'num_epochs': 8,

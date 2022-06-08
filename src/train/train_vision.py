@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_vision(args, encoder, task_config, model_config, tokenizer, device):
+    # get upstream_name
     upstream_name = args.pretrained_model_name.split('/')[-2]
     for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
         if short in args.pretrained_model_name:
@@ -45,6 +46,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
             break
     logger.info(f"Upstream Task: {upstream_name}")
 
+    # config
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
@@ -105,9 +107,9 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
 
     # Create optimizer
     if args.task_name == 'coco-cls':
-        loss_criterion = nn.CrossEntropyLoss()
-    else:
         loss_criterion = nn.BCEWithLogitsLoss()
+    else:
+        loss_criterion = nn.CrossEntropyLoss()
 
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -132,7 +134,6 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     model.zero_grad()
     model.train()
     for epoch in range(1, num_epochs+1):
-        # Training loop for epoch
         for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch))):
             labels = batch['labels'].to(device)
             inputs = batch2inputs_converter(batch)
@@ -195,8 +196,10 @@ def eval_coco(args, model, eval_dataloader, device, batch2inputs_converter):
         with torch.no_grad():
             logits = model(**inputs)
             preds = act_fn(logits) > 0.5
+
         all_labels[offset: offset+len(labels)] = labels.bool().cpu()
         all_preds[offset: offset+len(labels)] = preds.cpu()
+
         offset += len(labels)
 
     f1 = f1_score(all_labels, all_preds, average='micro')*100.0

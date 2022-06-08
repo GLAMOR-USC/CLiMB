@@ -386,7 +386,13 @@ def load_vilt_encoder(loaded_encoder_name, device, pretrained_vilt_name="dandeli
         vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
         if 'nlvr2' in loaded_encoder_name:
             vilt_encoder.expand_modality_type_embeddings()
-        vilt_encoder.load_state_dict(torch.load(loaded_encoder_name)) # loaded
+
+        ckpt = torch.load(loaded_encoder_name)
+        del_keys = [k for k in ckpt if "bert" in k]
+        for k in del_keys:
+            ckpt.pop(k, None)
+
+        vilt_encoder.load_state_dict(ckpt) # loaded
 
     logger.info("Successfully loaded pretrained ViLT model")
     return vilt_encoder
