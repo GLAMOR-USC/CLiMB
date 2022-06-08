@@ -11,20 +11,19 @@ import shutil
 import pickle as pkl
 import copy
 import pdb
-import wandb
 from tqdm import tqdm
+import wandb
+
+sys.path.insert(0, '.')
+
 import numpy as np
 import torch
 from torch import nn
 from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
-from data.visionlanguage_datasets.nlvr2_dataset import build_nlvr2_dataloader
-
-sys.path.insert(0, '.')
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-#os.environ["WANDB_START_METHOD"] = "thread"
-#wandb.init(project='nlvr')
+from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
+from data.visionlanguage_datasets.vcr_dataset import build_vcr_dataloader
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -32,7 +31,8 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-class NLVR2Trainer:
+
+class VCRTrainer:
 
     def __init__(self, args, task_configs, model_config, tokenizer, device):
 
@@ -40,47 +40,52 @@ class NLVR2Trainer:
         self.tokenizer = tokenizer
         self.device = device
 
-        self.nlvr_config = task_configs['nlvr2']
-        self.data_dir = os.path.join(args.mcl_data_dir, self.nlvr_config['data_dir'])
+        self.vcr_config = task_configs['vcr']
+        self.data_dir = os.path.join(args.mcl_data_dir, self.vcr_config['data_dir'])
+        self.task_type = self.vcr_config['task_type']
 
         # Model-specific stuff
         self.visual_mode = model_config['visual_mode']
         self.batch2inputs_converter = model_config['batch2inputs_converter']
 
         # Create dataloaders for training and validation
-        self.nlvr_train_dataloader = build_nlvr2_dataloader(args=args,
-                                                    data_dir=self.data_dir,
-                                                    split='train',
-                                                    visual_mode=self.visual_mode)
-
-        self.nlvr_val_dataloader = build_nlvr2_dataloader(args=args,
-                                                     data_dir=self.data_dir,
-                                                     split='val',
-                                                     visual_mode=self.visual_mode)
+        self.vcr_train_dataloader = build_vcr_dataloader(args=args,
+                                                data_dir=self.data_dir,
+                                                split='train',
+                                                tokenizer=tokenizer,
+                                                task_type=self.task_type,
+                                                visual_mode=self.visual_mode)
+    
+        self.vcr_val_dataloader = build_vcr_dataloader(args=args,
+                                                data_dir=self.data_dir,
+                                                split='val',
+                                                tokenizer=tokenizer,
+                                                task_type=self.task_type,
+                                                visual_mode=self.visual_mode)
 
         # Training hyperparameters
-        self.num_epochs = self.nlvr_config['num_epochs']
-        self.lr = self.nlvr_config['lr']
-        self.adam_epsilon = self.nlvr_config['adam_epsilon']
-        self.weight_decay = self.nlvr_config['weight_decay']
+        self.num_epochs = self.vcr_config['num_epochs']
+        self.lr = self.vcr_config['lr']
+        self.adam_epsilon = self.vcr_config['adam_epsilon']
+        self.weight_decay = self.vcr_config['weight_decay']
         self.loss_criterion = nn.CrossEntropyLoss()
-        self.max_steps = len(self.nlvr_train_dataloader) * self.num_epochs
+        self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
 
     def get_train_dataloader(self):
-        return self.nlvr_train_dataloader
+        return self.vcr_train_dataloader
 
     def get_collate_fn(self):
-        return self.nlvr_train_dataloader.collate_fn
+        return self.vcr_train_dataloader.collate_fn
 
     def forward_pass(self, model, batch, do_eval=False):
 
         inputs = self.batch2inputs_converter(batch)
         if do_eval is True:
             with torch.no_grad():
-                output = model(task_key='nlvr2', **inputs)
+                output = model(task_key='vcr', **inputs)
         else:
-            output = model(task_key='nlvr2', **inputs)
+            output = model(task_key='vcr', **inputs)
         return output
 
 
@@ -122,14 +127,13 @@ class NLVR2Trainer:
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("nlvr2")
+            model.set_active_adapters("vcr")
         elif self.args.cl_algorithm == 'experience_replay':
             assert replay_memory is not None
             do_replay = replay_memory.do_replay()
         elif self.args.cl_algorithm == 'ewc':
             assert ewc is not None
             do_ewc = ewc.do_ewc()
-
 
         # Create optimizer
         optimizer = self.create_optimizer(model)
@@ -154,7 +158,7 @@ class NLVR2Trainer:
             # Training loop for epoch
 
             model.train()
-            for step, batch in enumerate(tqdm(self.nlvr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+            for step, batch in enumerate(tqdm(self.vcr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
 
                 loss, output, ewc_task, ewc_loss = self.train_step(model, batch, optimizer, scheduler, ewc)
 
@@ -164,7 +168,7 @@ class NLVR2Trainer:
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
                 if (step + 1) % 100 == 0:
-                    log_dict = {'nlvr': {'loss': loss.item()}}
+                    log_dict = {'vcr': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
                     wandb.log(log_dict)
@@ -172,7 +176,7 @@ class NLVR2Trainer:
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'nlvr': {'val_score': eval_score}})
+            wandb.log({'vcr': {'val_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score
@@ -186,13 +190,14 @@ class NLVR2Trainer:
         model.eval()
         eval_score = 0
 
-        for step, batch in enumerate(tqdm(self.nlvr_val_dataloader, desc='Evaluating on NLVR2 val set')):
+        for step, batch in enumerate(tqdm(self.vcr_val_dataloader, desc='Evaluating on VCR val set')):
             output = self.forward_pass(model, batch, do_eval=True)
+
             logits = output[1]
             batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
             eval_score += batch_scores.sum().item()
 
-        eval_score = eval_score/len(self.nlvr_val_dataloader.dataset)*100.0
+        eval_score = eval_score/len(self.vcr_val_dataloader.dataset)*100.0
 
         model.train()
         return eval_score
@@ -201,7 +206,7 @@ class NLVR2Trainer:
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("nlvr2")
+            model.set_active_adapters("vcr")
 
         # Load model with encoder weights from encoder_path, and classifier weights from model_path
         model.load_state_dict(torch.load(model_path))
@@ -209,18 +214,18 @@ class NLVR2Trainer:
 
         return self.eval(model)
 
-class LowShotNLVR2Trainer(NLVR2Trainer):
+class LowShotVCRTrainer(VCRTrainer):
 
-    def __init__(self, args, task_configs, model_config, tokenizer, device, low_shot_config):
+    def __init__(self, args, task_configs, model_config, tokenizer, device, low_shot_config=None):
 
-        super(LowShotNLVR2Trainer, self).__init__(args, task_configs, model_config, tokenizer, device)
+        super(LowShotVCRTrainer, self).__init__(args, task_configs, model_config, tokenizer, device)
         self.low_shot_config = low_shot_config
         self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
 
-        self.nlvr_train_dataloader.dataset.convert_to_low_shot(num_shots_per_class=low_shot_config['num_shots_per_class'])
-        self.max_steps = len(self.nlvr_train_dataloader) * self.num_epochs
+        self.vcr_train_dataloader.dataset.convert_to_low_shot(low_shot_percentage=low_shot_config['percentage'])
+        self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
 
-    def train(self, model):
+    def train(self, model,):
 
         model.to(self.device)
 
@@ -247,14 +252,15 @@ class LowShotNLVR2Trainer(NLVR2Trainer):
             # Training loop for epoch
 
             model.train()
-            for step, batch in enumerate(tqdm(self.nlvr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+            for step, batch in enumerate(tqdm(self.vcr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+
                 loss, output, _, _ = self.train_step(model, batch, optimizer, scheduler)
 
-            # Do evaluation after epoch
             if epoch in self.eval_epochs:
+                # Do evaluation after epoch
                 eval_score = self.eval(model)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb.log({'nlvr': {'val_score': eval_score}})
+                wandb.log({'vcr': {'val_score': eval_score}})
                 if eval_score > best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score

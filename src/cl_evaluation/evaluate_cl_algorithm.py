@@ -28,10 +28,6 @@ from utils.seed_utils import set_seed
 
 logger = logging.getLogger(__name__)
 
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu")
-
 def forward_transfer_eval(args, results_file):
 
     cl_results = json.load(open(results_file))
@@ -54,14 +50,16 @@ def forward_transfer_eval(args, results_file):
         singletask_score = singletask_results[0]['best_score']
 
         # Compute relative gain
-        relative_gain = 100.0*(cl_task_score - singletask_score)/singletask_score
+        random_score = task_configs[task_key]['random_baseline_score']
+        relative_gain = 100.0*(cl_task_score - singletask_score)/(singletask_score - random_score)
+        logger.info("Absolute performance on task #{}, {} = {:.2f}%".format(task_num, task_name, cl_task_score))
         logger.info("Relative Gain for task #{}, {} = {:.2f}%".format(task_num, task_name, relative_gain))
         forward_transfer_dict[task_key] = relative_gain
 
     return forward_transfer_dict
 
 
-def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
+def catastrophic_forgetting_eval(args, results_file, model, task_trainers):
 
     model_config = model_configs[args.encoder_name]
     batch2inputs_converter = model_config['batch2inputs_converter']
@@ -77,7 +75,7 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
         task_name = task_configs[task_key]['task_name']
         if task_num < 1:
             continue
-        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_configs[args.encoder_name],
+        logger.info("Evaluating {} model using checkpoint after {} training, on previously-seen tasks {}".format(model_config['encoder_name'],
                                                                                                      task_name,
                                                                                                      ','.join(args.ordered_cl_tasks[:task_num])))
         model_path = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key), 'model')
@@ -92,8 +90,8 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
             prev_task_name = prev_task_config['task_name']
 
             # Get evaluation score on prev_task
-            eval_forgetting_method = prev_task_config['eval_forgetting_method']
-            eval_score = eval_forgetting_method(args, model, model_path, task_configs, model_config, tokenizer, device)
+            prev_task_trainer = task_trainers[prev_task_key]
+            eval_score = prev_task_trainer.eval_forgetting(model, model_path)
             logger.info("Evaluation score of {} model on {}, using checkpoint after {} training: {:.2f}".format(args.encoder_name,
                                                                                                   prev_task_name,
                                                                                                   task_name,
@@ -101,7 +99,8 @@ def catastrophic_forgetting_eval(args, results_file, model, tokenizer, device):
             prev_task_results = cl_results[prev_task_num]
             assert prev_task_results['task_key'] == prev_task_key
             baseline_score = prev_task_results['best_score']
-            forgetting_perc = 100.0*(eval_score - baseline_score)/baseline_score
+            random_score = task_configs[prev_task_key]['random_baseline_score']
+            forgetting_perc = 100.0*(baseline_score - eval_score)/(baseline_score-random_score)
             logger.info("Forgetting of {}, after training on {} = {:.2f}%".format(prev_task_name, task_name, forgetting_perc))
             catastrophic_forgetting_dict[task_key][prev_task_key] = forgetting_perc
 

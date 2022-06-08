@@ -1,8 +1,8 @@
 export WANDB_API_KEY=8cd0c45d6a9418a2997ec6478116a01c14499820
 export TOKENIZERS_PARALLELISM=false
 
-task_arr=("inat2019" "places365" "imagenet")
-nshot_arr=(16 32)
+task_arr=("coco-cls")
+nshot_arr=(0.05 0.10)
 subseed_arr=(10)
 ckpt_arr=(
     "dandelin/vilt-b32-mlm" \

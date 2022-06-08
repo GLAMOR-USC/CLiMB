@@ -11,6 +11,7 @@ from PIL import Image
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import random
 
 from PIL import Image
 from torchvision import transforms as T
@@ -31,6 +32,7 @@ class NLVR2Dataset(Dataset):
         self.data_dir = data_dir
         self.num_labels = 2
         self.visual_model = visual_mode
+        self.split = split
 
         rename_split = {'train': 'train', 'val': 'dev', 'test': 'test1'}
         _split = rename_split[split]
@@ -97,6 +99,19 @@ class NLVR2Dataset(Dataset):
 
         return example["sentence"], image_tensor, example["labels"]
 
+    def convert_to_low_shot(self, num_shots_per_class):
+
+        assert self.split == 'train'
+        logger.info("Converting NLVR2 train split into low-shot dataset, with {} examples per class...".format(num_shots_per_class))
+        new_data = []
+        for i in range(self.num_labels):
+            i_examples = [d for d in self.data if d['labels'] == i]
+            low_shot_examples = random.sample(i_examples, num_shots_per_class)
+            new_data.extend(low_shot_examples)
+        self.data = new_data
+        self.n_examples = len(self.data)
+
+        logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
 #TODO: implement visual_mode = faster-RCNN 
 def nlvr2_batch_collate(batch, visual_mode):

@@ -1,14 +1,11 @@
-from train.train_vqa import train_vqa, eval_vqa_forgetting, vqa_replay_step, get_vqa_train_dataset
-from train.train_nlvr2 import train_nlvr2, eval_nlvr2_forgetting, nlvr2_replay_step, get_nlvr2_train_dataset
-from train.train_snli_ve import train_snli_ve, eval_snli_ve_forgetting, snli_ve_replay_step, get_snli_ve_train_dataset
-
-from data.visionlanguage_datasets.vqa_dataset import vqa_batch_collate
-from data.visionlanguage_datasets.nlvr2_dataset import nlvr2_batch_collate
-from data.visionlanguage_datasets.snli_ve_dataset import snlive_batch_collate
+from train.train_vqa import VQATrainer, LowShotVQATrainer
+from train.train_nlvr2 import NLVR2Trainer, LowShotNLVR2Trainer
+from train.train_snli_ve import SNLIVETrainer, LowShotSNLIVETrainer
+from train.train_vcr import VCRTrainer, LowShotVCRTrainer
 
 from train.train_mscoco_detection import train_mscoco_detection
 
-SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve']
+SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve', 'vcr']
 
 mscoco_config = {
         'data_dir': 'ms-coco/',
@@ -31,11 +28,12 @@ vqa_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_vqa,
-        'eval_forgetting_method': eval_vqa_forgetting,
-        'batch_collate_fn': vqa_batch_collate,
-        'replay_step_method': vqa_replay_step,
-        'get_train_dataset_method': get_vqa_train_dataset,
+        'task_trainer': VQATrainer,
+        'random_baseline_score': 0.0,
+        'low_shot_config': {'task_trainer': LowShotVQATrainer,
+                            'type': 'percentage',
+                            'percentage':0.05,
+                            'eval_epochs': [6, 8, 10]}
 }
 
 nlvr_config = {
@@ -50,11 +48,13 @@ nlvr_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_nlvr2,
-        'eval_forgetting_method': eval_nlvr2_forgetting,
-        'batch_collate_fn': nlvr2_batch_collate,
-        'replay_step_method': nlvr2_replay_step,
-        'get_train_dataset_method': get_nlvr2_train_dataset,
+        'task_trainer': NLVR2Trainer,
+        'random_baseline_score': 50.0,
+        'low_shot_config': {'task_trainer': LowShotNLVR2Trainer,
+                            'type': 'n-shot-per-class',
+                            'num_shots_per_class': 2048,
+                            'eval_epochs': [6, 8, 10]
+                            }
 }
 
 snli_ve_config = {
@@ -70,11 +70,36 @@ snli_ve_config = {
         'weight_decay': 1e-2,
         'adam_epsilon': 1e-8,
         'warmup_ratio': 0.1,
-        'train_method': train_snli_ve,
-        'eval_forgetting_method': eval_snli_ve_forgetting,
-        'batch_collate_fn': snlive_batch_collate,
-        'replay_step_method': snli_ve_replay_step,
-        'get_train_dataset_method': get_snli_ve_train_dataset,
+        'task_trainer': SNLIVETrainer,
+        'random_baseline_score': 33.33,
+        'low_shot_config': {'task_trainer': LowShotSNLIVETrainer,
+                            'type': 'n-shot-per-class',
+                            'num_shots_per_class': 2048,
+                            'eval_epochs': [2, 4, 5]
+                            }
+}
+
+vcr_config = {
+        'task_name': 'VCR',
+        'data_dir': 'vcr/',
+        'splits': ['train', 'dev', 'test'],
+        'num_labels': 4,
+        'num_images': 1,
+        'model_type': 'multi-choice',
+        'task_type': 'answer',
+        'num_choices': 4,
+        'num_epochs': 10,
+        'lr': 1e-4,
+        'weight_decay': 1e-2,
+        'adam_epsilon': 1e-8,
+        'warmup_ratio': 0.1,
+        'task_trainer': VCRTrainer,
+        'random_baseline_score': 25.0,
+        'low_shot_config': {'task_trainer': LowShotVCRTrainer,
+                            'type': 'percentage',
+                            'percentage':0.05,
+                            'eval_epochs': [2, 4, 6, 8, 10]
+                            }
 }
 
 imdb_config = {
@@ -204,6 +229,7 @@ task_configs = {
     'vqa': vqa_config,
     'nlvr2': nlvr_config,
     'snli-ve': snli_ve_config,
+    'vcr': vcr_config,
     'imdb': imdb_config,
     'sst2': sst2_config,
     'hellaswag': hellaswag_config,
