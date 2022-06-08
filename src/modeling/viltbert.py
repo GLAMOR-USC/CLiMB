@@ -21,18 +21,6 @@ logging.basicConfig(
         level=logging.INFO)
 transformers_logging.set_verbosity_error()
 
-def debug(processor, encodings, n=4):
-    from torchvision.utils import save_image
-    def denorm(x):
-        """Convert the range from [-1, 1] to [0, 1]."""
-        out = (x + 1) / 2
-        return out.clamp_(0, 1)
-
-    imgs = denorm(encodings['pixel_values'][: n*2].cpu())
-    texts = processor.batch_decode(encodings['input_ids'][:n])
-    save_image(imgs, 'debug_img.png', nrow=2, padding=0)
-    print(texts)
-    pdb.set_trace()
 
 
 class ViltBertEncoderWrapper(nn.Module):
