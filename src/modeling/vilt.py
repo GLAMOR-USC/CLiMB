@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from transformers import BertConfig, BertTokenizer, BertModel
-from transformers import ViltProcessor, ViltModel
+from transformers import ViltConfig, ViltProcessor, ViltModel
 from transformers import BertTokenizerFast
 from transformers import logging as transformers_logging
 
@@ -21,18 +21,6 @@ logging.basicConfig(
         level=logging.INFO)
 transformers_logging.set_verbosity_error()
 
-def debug(processor, encodings, n=4):
-    from torchvision.utils import save_image
-    def denorm(x):
-        """Convert the range from [-1, 1] to [0, 1]."""
-        out = (x + 1) / 2
-        return out.clamp_(0, 1)
-
-    imgs = denorm(encodings['pixel_values'][: n*2].cpu())
-    texts = processor.batch_decode(encodings['input_ids'][:n])
-    save_image(imgs, 'debug_img.png', nrow=2, padding=0)
-    print(texts)
-    pdb.set_trace()
 
 
 class ViltEncoderWrapper(nn.Module):
@@ -261,6 +249,7 @@ class ViltContinualLearner(nn.Module):
 
         self.vilt_encoder.vilt.set_active_adapters(task_key)
 
+
 class ViltForImageClassification(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):
@@ -296,6 +285,7 @@ class ViltForSequenceClassification(nn.Module):
                             nn.GELU(),
                             nn.Linear(encoder_dim*2, num_labels)
                         )
+
 
     def forward(self, images, texts):
 
@@ -336,47 +326,112 @@ class ViltForMultipleChoice(nn.Module):
         return output_logits
 
 
-# for debugging
-from transformers import BertModel, ViltProcessor
-class BertForMultipleChoice(nn.Module):
+class ViltBertForSequenceClassification(nn.Module):
+
+    def __init__(self, encoder, encoder_dim, num_labels):
+
+        super().__init__()
+        self.encoder_dim = encoder_dim
+        self.vilt_encoder = encoder
+        self.clf_layer = nn.Sequential(
+                            nn.Linear(encoder_dim, encoder_dim*2),
+                            nn.LayerNorm(encoder_dim*2),
+                            nn.GELU(),
+                            nn.Linear(encoder_dim*2, num_labels)
+                        )
+
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+
+    @torch.no_grad()
+    def get_bert_outputs(self, encodings):
+        outputs = self.bert(encodings['input_ids'],
+            attention_mask=encodings['attention_mask'], 
+            token_type_ids=encodings['token_type_ids'])
+        return outputs.last_hidden_state #[bs, max_seq_len, hidden_size]
+
+    def forward(self, images, texts):
+
+        encodings = self.vilt_encoder.process_inputs(images, texts)
+        # expand to batch size
+        bs = len(encodings['input_ids'])
+        encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
+        encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
+
+        encodings['inputs_embeds'] = self.get_bert_outputs(encodings)
+        encodings['input_ids'] = None
+
+        encoder_output = self.vilt_encoder(**encodings)
+
+        output_logits = self.clf_layer(encoder_output)
+        return output_logits
+        
+
+class ViltBertForMultipleChoice(nn.Module):
+
     def __init__(self, encoder, encoder_dim, num_labels):
 
         super().__init__()
         self.encoder_dim = encoder_dim
         self.num_labels = num_labels
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.vilt_encoder = encoder
         self.clf_layer = nn.Sequential(
                             nn.Dropout(0.1),
                             nn.Linear(encoder_dim, 1)
                         )
-        self.device = torch.device("cuda")
-        self.processor = ViltProcessor.from_pretrained("dandelin/vilt-b32-mlm")
-        self.processor.tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-        self.processor.feature_extractor.size = 128
+
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+
+    @torch.no_grad()
+    def get_bert_outputs(self, encodings):
+        outputs = self.bert(encodings['input_ids'],
+            attention_mask=encodings['attention_mask'], 
+            token_type_ids=encodings['token_type_ids'])
+        return outputs.last_hidden_state #[bs, max_seq_len, hidden_size]
 
     def forward(self, images, texts):
-        encodings = self.processor(images=images, text=texts, max_length=80,
-            padding=True, truncation=True, return_tensors='pt').to(self.device)
-
+        encodings = self.vilt_encoder.process_inputs(images, texts)
         # unflat_input_ids = encodings['input_ids'].view(self.num_labels, 32, -1).transpose(0, 1)
-        outputs = self.bert(encodings['input_ids'], 
-                                    attention_mask=encodings['attention_mask'],
-                                    token_type_ids=encodings['token_type_ids'])
-        encoder_output = outputs[1]
+        bs = len(texts)
+        encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
+        encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
+
+        encodings['inputs_embeds'] = self.get_bert_outputs(encodings)
+        encodings['input_ids'] = None
+
+        encoder_output = self.vilt_encoder(**encodings)
         reshape_output = encoder_output.view(self.num_labels, -1, self.encoder_dim).transpose(0, 1).contiguous()
 
         output_logits = self.clf_layer(reshape_output).squeeze()
         return output_logits
 
-def load_vilt_encoder(pretrained_vilt_name, device):
+
+def load_vilt_encoder(loaded_encoder_name, device, pretrained_vilt_name="dandelin/vilt-b32-mlm"):
 
     logger.info("-"*100)
-    logger.info("Loading pretrained ViLT model: {}".format(pretrained_vilt_name))
+    logger.info("Loading ViLT encoder model: {}".format(loaded_encoder_name))
     vilt_processor = ViltProcessor.from_pretrained(pretrained_vilt_name)
-    vilt = ViltModel.from_pretrained(pretrained_vilt_name)
-    vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
+
+    if loaded_encoder_name == pretrained_vilt_name: # load pretrained encoder
+        vilt = ViltModel.from_pretrained(pretrained_vilt_name)
+        vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
+
+    else: # load pre-finetuned encoder
+        config = ViltConfig.from_pretrained(pretrained_vilt_name)
+        vilt = ViltModel(config) # random init.
+        vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
+        if 'nlvr2' in loaded_encoder_name:
+            vilt_encoder.expand_modality_type_embeddings()
+
+        ckpt = torch.load(loaded_encoder_name)
+        del_keys = [k for k in ckpt if "bert" in k]
+        for k in del_keys:
+            ckpt.pop(k, None)
+
+        vilt_encoder.load_state_dict(ckpt) # loaded
+
     logger.info("Successfully loaded pretrained ViLT model")
     return vilt_encoder
+
 
 def convert_batch_to_vilt_input_dict(batch):
 

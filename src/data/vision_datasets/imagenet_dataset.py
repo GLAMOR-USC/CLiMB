@@ -3,6 +3,7 @@ import pdb
 import os
 import time
 import json
+import csv
 import logging
 import random
 import glob
@@ -26,21 +27,27 @@ logging.basicConfig(
 
 class ImageNetDataset(Dataset):
 
-    def __init__(self, image_dir, selected_fn, mode, n_shot=None, subsample_seed=None):
-        self.image_dir = image_dir
-        self.selected_fn = selected_fn
+    def __init__(self, data_dir, mode, n_shot=None, subsample_seed=None):
+        self.data_dir = data_dir
         self.mode = mode
         self.n_shot = n_shot
         self.subsample_seed = subsample_seed
+        self.pil_transform = T.Resize(size=384, max_size=640)
 
-        self.preprocess()
+        if self.mode == 'test':
+            self.preprocess_test()
+        else:
+            self.preprocess_train_val()
+
+        self.num_images = len(self.dataset)
+        logger.info(f'# {self.num_images} images in {self.mode} set')
 
 
-    def get_train_val_split(self, dataset, split_ratio=0.7):
+    def get_train_val_split(self, dataset, val_num_per_class=50):
         train_dataset, val_dataset = [], []
-        # split per class
+        # split each class into train/val; balanced
         for cls_data in dataset:
-            n_train = int(len(cls_data)*split_ratio)
+            n_train = len(cls_data) - val_num_per_class
             # shuffle before train/val split
             random.seed(2022)
             random.shuffle(cls_data)
@@ -48,10 +55,8 @@ class ImageNetDataset(Dataset):
             train_cls_ds = cls_data[:n_train]
             val_dataset.extend(cls_data[n_train:])
 
-            if self.mode != 'train': continue
-            if self.n_shot is None:
-                train_dataset.extend(train_cls_ds)
-            else: #subsample with different seeds
+            # subsample n-shot per class in the training set with different seeds
+            if self.mode == 'train':
                 random.seed(self.subsample_seed)
                 random.shuffle(train_cls_ds)
                 train_dataset.extend(train_cls_ds[:self.n_shot])
@@ -60,30 +65,47 @@ class ImageNetDataset(Dataset):
             return train_dataset
         else:
             return val_dataset
-            
 
-    def preprocess(self):
-        dir_names = os.listdir(self.image_dir)
 
-        selected_classes = np.load(self.selected_fn)
-        dataset = [[] for _ in range(len(selected_classes))]
+    def preprocess_train_val(self):
+        self.image_dir = os.path.join(self.data_dir, 'train')
+        all_classes = sorted(os.listdir(self.image_dir))
+        assert len(all_classes) == 1000
+
+        dataset = [[] for _ in range(len(all_classes))]
         n_imgs = 0
-        for label, dir_name in enumerate(selected_classes):
+        for label, dir_name in enumerate(all_classes):
             filenames = glob.glob(os.path.join(self.image_dir, dir_name, '*.JPEG'))
             for fn in filenames:
                 dataset[label].append([fn, label])
                 n_imgs += 1
 
-#        print(f'# of all data: {n_imgs}')
         self.dataset = self.get_train_val_split(dataset)
-        self.num_images = len(self.dataset)
-        print(f'# {self.num_images} images in {self.mode} set')
+            
+
+    def preprocess_test(self):
+        self.image_dir = os.path.join(self.data_dir, 'val')
+        annot_file = os.path.join(self.data_dir, "LOC_val_solution.csv")
+
+        all_classes = sorted(os.listdir(os.path.join(self.data_dir, 'train')))
+        assert len(all_classes) == 1000
+        dir2lb = {name:i for i, name in enumerate(all_classes)}
+
+        self.dataset = []
+        lines = csv.DictReader(open(annot_file))
+        for line in lines:
+            fn = os.path.join(self.data_dir, 'val', line['ImageId']+".JPEG")
+            cls_dir = line['PredictionString'].split()[0]
+            label = dir2lb[cls_dir]
+            self.dataset.append([fn, label])
 
 
     def __getitem__(self, index):
         filename, label = self.dataset[index]
         image = Image.open(filename)
         image = image.convert('RGB')
+        if min(list(image.size)) > 384:
+            image = self.pil_transform(image)
 
         return image, label
 
@@ -99,10 +121,10 @@ def batch_collate(batch):
             'labels': torch.LongTensor(labels)}    
 
 
-def get_data_loader(args, img_dir, selected_fn, split, n_shot=None, subsampled_seed=None):
+def get_data_loader(args, data_dir, split, n_shot=None, subsampled_seed=None):
     logger.info(f"Creating ImageNet {split} dataloader")
 
-    dataset = ImageNetDataset(img_dir, selected_fn, split, n_shot, subsampled_seed)
+    dataset = ImageNetDataset(data_dir, split, n_shot, subsampled_seed)
     batch_size = args.batch_size if split == 'train' else 128
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -112,23 +134,3 @@ def get_data_loader(args, img_dir, selected_fn, split, n_shot=None, subsampled_s
         collate_fn = lambda x: batch_collate(x)
         )
     return dataloader
-
-
-'''
-if __name__ == '__main__':
-
-    img_dir = '/data/datasets/MCL/ILSVRC2012/train_256'
-    selected_fn = '/data/datasets/MCL/coco_imagenet_shared_objects.npy'
-
-    class Args:
-        def __init__(self):
-            self.batch_size = 32
-            self.num_workers = 0
-
-    args = Args()
-    dataloader = get_data_loader(args, img_dir, selected_fn, 'train', n_shot=64, subsampled_seed=20)
-    for batch in tqdm(dataloader):
-        print(batch['raw_texts'])
-        print(batch['images'])
-        print(batch['labels'])
-'''

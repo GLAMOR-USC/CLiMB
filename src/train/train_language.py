@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_language(args, encoder, task_config, model_config, tokenizer, device):
+    upstream_name = args.pretrained_model_name.split('/')[-2]
+    for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
+        if short in args.pretrained_model_name:
+            upstream_name += f"_{short}"
+            break
+    logger.info(f"Upstream Task: {upstream_name}")
+
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
@@ -58,17 +65,6 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     model = classifier_class(encoder=encoder, 
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels)
-
-    '''
-    # load the ckpt of upstream tasks
-    path = '/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve/checkpoints/task2_snli-ve/model'
-    ckpt_dict = torch.load(path)
-    model_dict = model.state_dict()
-    for k in ckpt_dict.keys():
-        if 'clf_layer' and 'task_layer' not in k:
-            model_dict[k] = ckpt_dict[k].clone()
-    model.load_state_dict(model_dict)
-    '''
 
     if max_len > 40:
         img_sz = 128
@@ -92,7 +88,14 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
         task_name=task_name, 
         split='val', 
         max_len=max_len, 
-        batch_size=args.batch_size*4,
+        batch_size=256,
+        data_dir=data_dir)
+
+    test_dataloader = get_data_loader(tokenizer, 
+        task_name=task_name, 
+        split='test', 
+        max_len=max_len, 
+        batch_size=256,
         data_dir=data_dir)
 
     # Training hyperparameters
@@ -126,9 +129,9 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     best_score = 0
     model.zero_grad()
     model.train()
-    for epoch in range(num_epochs):
+    for epoch in range(1, num_epochs+1):
         # Training loop for epoch
-        for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+        for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch))):
             target = batch[-1].to(device)
             inputs = batch2inputs_converter(batch, mean_image)
 
@@ -143,23 +146,26 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
             if step % 50 == 0:
                 print('loss:', loss.item())
 
-        # Do evaluation after epoch
-        eval_score = eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter)
-        logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+        # Eval on the val set and update the best model
+        if epoch > 5 and epoch%2 == 0:
+            eval_score = eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter)
+            logger.info("Evaluation after epoch {}: {:.2f}".format(epoch, eval_score))
 
-        if eval_score > best_score:
-            logger.info("New best evaluation score: {:.2f}".format(eval_score))
-            best_score = eval_score
-            best_epoch = epoch+1
+            if eval_score > best_score:
+                logger.info("New best evaluation score: {:.2f}".format(eval_score))
+                best_score = eval_score
+                best_epoch = epoch
+                best_model = copy.deepcopy(model)
 
-    write_results(n_shot, subsample_seed, best_score, task_name, max_len, output_dir)
-    return best_score, best_epoch
+    # eval the best model on the test set & write the results
+    test_score = eval(args, best_model, mean_image, test_dataloader, device, batch2inputs_converter)
+    write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir)
 
 
-def write_results(n_shot, subsample_seed, best_score, task_name, max_len, output_dir):
+def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir):
     tree = lambda: defaultdict(tree)
     all_scores = tree()
-    out_fn = os.path.join(output_dir, f'{task_name}_results-{max_len}.json')
+    out_fn = os.path.join(output_dir, f'{task_name}_{upstream_name}_results.json')
     # load previous results
     if os.path.exists(out_fn):
         with open(out_fn, "r") as f:
@@ -167,16 +173,16 @@ def write_results(n_shot, subsample_seed, best_score, task_name, max_len, output
         for k, v in rdict.items():
             all_scores[k] = v
     # update current results
-    all_scores[f'nshot-{n_shot}'][f'seed-{subsample_seed}'] = best_score
+    all_scores[f'nshot-{n_shot}'][f'seed-{subsample_seed}'] = (test_score, best_score, best_epoch)
     with open(out_fn, "w") as outfile:
         outfile.write(json.dumps(all_scores))
 
 
-def eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter):
+def eval(args, model, mean_image, eval_dataloader, device, batch2inputs_converter):
 
     model.eval()
     eval_score = 0
-    for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on val set')):
+    for step, batch in enumerate(tqdm(eval_dataloader, desc='Evaluating...')):
         labels = batch[-1]
         inputs = batch2inputs_converter(batch, mean_image)
         with torch.no_grad():
@@ -185,7 +191,7 @@ def eval(args, model, mean_image, val_dataloader, device, batch2inputs_converter
         batch_scores = (logits.argmax(-1).cpu() == labels)
         eval_score += batch_scores.sum().item()
 
-    eval_score = eval_score/len(val_dataloader.dataset)*100.0
+    eval_score = eval_score/len(eval_dataloader.dataset)*100.0
     logger.info(f'Eval_acc: {eval_score:.3f}')
 
     model.train()
@@ -198,11 +204,11 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--task_name", default=None, type=str, required=True, choices=['imdb', 'sst2', 'hellaswag', 'piqa', 'commonsenseqa'],
+    parser.add_argument("--task_name", default=None, type=str, required=True,
                         help="The name of the language-only task.")
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
-    parser.add_argument("--model_catog", default='vilt-vl', type=str, choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc'],
+    parser.add_argument("--model_catog", default='vilt-vl', type=str,
                         help="The catogory for model class.")
     parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
                         help="Name of pretrained model weights to load.")
@@ -258,8 +264,7 @@ def main():
     # Load the correct training method for current CL task, and call the training method
     task_config = task_configs[args.task_name]
     logger.info("-"*100)
-    best_eval_score, best_epoch = train_language(args, encoder, task_config, model_config, tokenizer, device)
-    logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(args.task_name, best_eval_score, best_epoch))
+    train_language(args, encoder, task_config, model_config, tokenizer, device)
 
 if __name__ == '__main__':
     main()

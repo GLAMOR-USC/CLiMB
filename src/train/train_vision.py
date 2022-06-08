@@ -19,11 +19,11 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from torch import nn
+from sklearn.metrics import f1_score
 from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 from transformers import BertTokenizer
 
-from data.image_datasets.imagenet_dataset import get_data_loader
 from modeling import load_encoder_map
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs
@@ -38,11 +38,19 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_vision(args, encoder, task_config, model_config, tokenizer, device):
+    # get upstream_name
+    upstream_name = args.pretrained_model_name.split('/')[-2]
+    for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
+        if short in args.pretrained_model_name:
+            upstream_name += f"_{short}"
+            break
+    logger.info(f"Upstream Task: {upstream_name}")
+
+    # config
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
-    selected_fn = task_config['selected_fn']
-    n_shot = args.num_shot
+    n_shot = args.num_shot if args.task_name == 'coco-cls' else int(args.num_shot)
     subsample_seed = args.subsample_seed
     output_dir = args.output_dir
 
@@ -55,33 +63,40 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels)
 
-    '''
-    # load the ckpt of upstream tasks
-    path = '/data/experiments/MCL/vilt-sequential_ft-task0_vqa-task1_nlvr2-task2_snli-ve/checkpoints/task2_snli-ve/model'
-    ckpt_dict = torch.load(path)
-    model_dict = model.state_dict()
-    for k in ckpt_dict.keys():
-        if 'clf_layer' and 'task_layer' not in k:
-            model_dict[k] = ckpt_dict[k].clone()
-    model.load_state_dict(model_dict)
-    '''
-
     model.to(device)
 
     # Create dataloaders for training and validation
+    if args.task_name == 'imagenet':
+        from data.vision_datasets.imagenet_dataset import get_data_loader
+    elif args.task_name == 'places365':
+        from data.vision_datasets.places365_dataset import get_data_loader
+    elif args.task_name == 'inat2019':
+        from data.vision_datasets.inat2019_dataset import get_data_loader
+    elif args.task_name == 'coco-cls':
+        from data.vision_datasets.coco_cls_dataset import get_data_loader
+    else:
+        raise NotImplementedError("get_data_loader not impelmented for this task!")
+
+    eval_fn = eval_coco if args.task_name == 'coco-cls' else eval_acc
+
     train_dataloader = get_data_loader(
         args,
         data_dir,
-        selected_fn,
         'train', 
         n_shot,
-        subsample_seed)
-
+        subsample_seed
+    )
     val_dataloader = get_data_loader(
         args,
         data_dir,
-        selected_fn,
-        'val') 
+        'val',
+        n_shot
+    ) 
+    test_dataloader = get_data_loader(
+        args,
+        data_dir,
+        'test'
+    ) 
 
     # Training hyperparameters
     num_epochs = task_config['num_epochs']
@@ -91,7 +106,11 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     warmup_ratio = task_config['warmup_ratio']
 
     # Create optimizer
-    loss_criterion = nn.CrossEntropyLoss()
+    if args.task_name == 'coco-cls':
+        loss_criterion = nn.BCEWithLogitsLoss()
+    else:
+        loss_criterion = nn.CrossEntropyLoss()
+
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
@@ -114,9 +133,8 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     best_score = 0
     model.zero_grad()
     model.train()
-    for epoch in range(num_epochs):
-        # Training loop for epoch
-        for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+    for epoch in range(1, num_epochs+1):
+        for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch))):
             labels = batch['labels'].to(device)
             inputs = batch2inputs_converter(batch)
 
@@ -131,23 +149,26 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
             if step % 50 == 0:
                 print('loss:', loss.item())
 
-        # Do evaluation after epoch
-        eval_score = eval(args, model, val_dataloader, device, batch2inputs_converter)
-        logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
+        # Eval on the val set and update the best model
+        if epoch > 5 and epoch%2 == 0:
+            eval_score = eval_fn(args, model, val_dataloader, device, batch2inputs_converter)
+            logger.info("Evaluation after epoch {}: {:.2f}".format(epoch, eval_score))
 
-        if eval_score > best_score:
-            logger.info("New best evaluation score: {:.2f}".format(eval_score))
-            best_score = eval_score
-            best_epoch = epoch+1
+            if eval_score > best_score:
+                logger.info("New best evaluation score: {:.2f}".format(eval_score))
+                best_score = eval_score
+                best_epoch = epoch
+                best_model = copy.deepcopy(model)
 
-    write_results(n_shot, subsample_seed, best_score, task_name, output_dir)
-    return best_score, best_epoch
+    # eval the best model on the test set & write the results
+    test_score = eval_fn(args, best_model, test_dataloader, device, batch2inputs_converter)
+    write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir)
 
 
-def write_results(n_shot, subsample_seed, best_score, task_name, output_dir):
+def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir):
     tree = lambda: defaultdict(tree)
     all_scores = tree()
-    out_fn = os.path.join(output_dir, f'{task_name}_results.json')
+    out_fn = os.path.join(output_dir, f'{task_name}_{upstream_name}_results.json')
     # load previous results
     if os.path.exists(out_fn):
         with open(out_fn, "r") as f:
@@ -155,16 +176,44 @@ def write_results(n_shot, subsample_seed, best_score, task_name, output_dir):
         for k, v in rdict.items():
             all_scores[k] = v
     # update current results
-    all_scores[f'nshot-{n_shot}'][f'seed-{subsample_seed}'] = best_score
+    all_scores[f'nshot-{n_shot}'][f'seed-{subsample_seed}'] = (test_score, best_score, best_epoch)
     with open(out_fn, "w") as outfile:
         outfile.write(json.dumps(all_scores))
 
 
-def eval(args, model, val_dataloader, device, batch2inputs_converter):
+
+def eval_coco(args, model, eval_dataloader, device, batch2inputs_converter):
+
+    model.eval()
+    act_fn = nn.Sigmoid()
+
+    all_labels = torch.zeros((len(eval_dataloader.dataset), 80), dtype=torch.bool)
+    all_preds = all_labels.clone()
+    offset = 0
+    for step, batch in enumerate(tqdm(eval_dataloader, desc='Evaluating...')):
+        labels = batch['labels']
+        inputs = batch2inputs_converter(batch)
+        with torch.no_grad():
+            logits = model(**inputs)
+            preds = act_fn(logits) > 0.5
+
+        all_labels[offset: offset+len(labels)] = labels.bool().cpu()
+        all_preds[offset: offset+len(labels)] = preds.cpu()
+
+        offset += len(labels)
+
+    f1 = f1_score(all_labels, all_preds, average='micro')*100.0
+    logger.info(f'Eval_F1: {f1:.3f}')
+
+    model.train()
+    return f1
+
+
+def eval_acc(args, model, eval_dataloader, device, batch2inputs_converter):
 
     model.eval()
     eval_score = 0
-    for step, batch in enumerate(tqdm(val_dataloader, desc='Evaluating on val set')):
+    for step, batch in enumerate(tqdm(eval_dataloader, desc='Evaluating...')):
         labels = batch['labels']
         inputs = batch2inputs_converter(batch)
         with torch.no_grad():
@@ -173,7 +222,7 @@ def eval(args, model, val_dataloader, device, batch2inputs_converter):
         batch_scores = (logits.argmax(-1).cpu() == labels)
         eval_score += batch_scores.sum().item()
 
-    eval_score = eval_score/len(val_dataloader.dataset)*100.0
+    eval_score = eval_score/len(eval_dataloader.dataset)*100.0
     logger.info(f'Eval_acc: {eval_score:.3f}')
 
     model.train()
@@ -186,7 +235,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--task_name", default=None, type=str, required=True, choices=['imagenet'],
+    parser.add_argument("--task_name", default=None, type=str, required=True,
                         help="The name of the vision-only task.")
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
@@ -209,8 +258,8 @@ def main():
                         help="Random seed.")
 
     # only used by few-shot downstream tasks
-    parser.add_argument("--num_shot", type=int,
-                        help="Number of training data (per class)")
+    parser.add_argument("--num_shot", type=float,
+                        help="Number of training data per class OR the ratio of the original training set")
     parser.add_argument("--subsample_seed", type=int,
                         help="Random seed for few-shot sampling.")
 
@@ -226,6 +275,7 @@ def main():
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
     set_seed(args)
+
 
     # Load the Encoder model
     model_config = model_configs[args.model_catog]
@@ -247,8 +297,7 @@ def main():
     # Load the correct training method for current CL task, and call the training method
     task_config = task_configs[args.task_name]
     logger.info("-"*100)
-    best_eval_score, best_epoch = train_vision(args, encoder, task_config, model_config, tokenizer, device)
-    logger.info("Best {} evaluation score = {:.2f}, after epoch {}".format(args.task_name, best_eval_score, best_epoch))
+    train_vision(args, encoder, task_config, model_config, tokenizer, device)
 
 if __name__ == '__main__':
     main()

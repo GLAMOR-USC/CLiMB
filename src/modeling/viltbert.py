@@ -21,18 +21,6 @@ logging.basicConfig(
         level=logging.INFO)
 transformers_logging.set_verbosity_error()
 
-def debug(processor, encodings, n=4):
-    from torchvision.utils import save_image
-    def denorm(x):
-        """Convert the range from [-1, 1] to [0, 1]."""
-        out = (x + 1) / 2
-        return out.clamp_(0, 1)
-
-    imgs = denorm(encodings['pixel_values'][: n*2].cpu())
-    texts = processor.batch_decode(encodings['input_ids'][:n])
-    save_image(imgs, 'debug_img.png', nrow=2, padding=0)
-    print(texts)
-    pdb.set_trace()
 
 
 class ViltBertEncoderWrapper(nn.Module):
@@ -274,80 +262,6 @@ class ViltBertContinualLearner(nn.Module):
     def set_active_adapters(self, task_key):
 
         self.viltbert_encoder.vilt.set_active_adapters(task_key)
-
-class ViltBertForImageClassification(nn.Module):
-
-    def __init__(self, encoder, encoder_dim, num_labels):
-
-        super().__init__()
-        self.encoder_dim = encoder_dim
-        self.viltbert_encoder = encoder
-        self.clf_layer = nn.Sequential(
-                            nn.Linear(encoder_dim, encoder_dim*2),
-                            nn.LayerNorm(encoder_dim*2),
-                            nn.GELU(),
-                            nn.Linear(encoder_dim*2, num_labels)
-                        )
-
-    def forward(self, images, texts):
-        encodings = self.viltbert_encoder.process_inputs(images, texts)
-        encoder_output = self.viltbert_encoder(**encodings)
-
-        output_logits = self.clf_layer(encoder_output)
-        return output_logits
-
-
-class ViltBertForSequenceClassification(nn.Module):
-
-    def __init__(self, encoder, encoder_dim, num_labels):
-
-        super().__init__()
-        self.encoder_dim = encoder_dim
-        self.viltbert_encoder = encoder
-        self.clf_layer = nn.Sequential(
-                            nn.Linear(encoder_dim, encoder_dim*2),
-                            nn.LayerNorm(encoder_dim*2),
-                            nn.GELU(),
-                            nn.Linear(encoder_dim*2, num_labels)
-                        )
-
-    def forward(self, images, texts):
-
-        encodings = self.viltbert_encoder.process_inputs(images, texts)
-        # expand to batch size
-        bs = len(encodings['input_ids'])
-        encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
-        encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
-        encoder_output = self.viltbert_encoder(**encodings)
-
-        output_logits = self.clf_layer(encoder_output)
-        return output_logits
-
-
-class ViltBertForMultipleChoice(nn.Module):
-
-    def __init__(self, encoder, encoder_dim, num_labels):
-
-        super().__init__()
-        self.encoder_dim = encoder_dim
-        self.num_labels = num_labels
-        self.viltbert_encoder = encoder
-        self.clf_layer = nn.Sequential(
-                            nn.Dropout(0.1),
-                            nn.Linear(encoder_dim, 1)
-                        )
-
-    def forward(self, images, texts):
-        encodings = self.viltbert_encoder.process_inputs(images, texts)
-        # unflat_input_ids = encodings['input_ids'].view(self.num_labels, 32, -1).transpose(0, 1)
-        bs = len(encodings['input_ids'])
-        encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
-        encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
-        encoder_output = self.viltbert_encoder(**encodings)
-        reshape_output = encoder_output.view(self.num_labels, -1, self.encoder_dim).transpose(0, 1).contiguous()
-
-        output_logits = self.clf_layer(reshape_output).squeeze()
-        return output_logits
 
 
 def load_viltbert_encoder(pretrained_vilt_name, device):
