@@ -12,7 +12,6 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
-import wandb
 
 sys.path.insert(0, '.')
 
@@ -23,6 +22,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.visionlanguage_datasets.vcr_dataset import build_vcr_dataloader
+from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -40,11 +40,11 @@ class VCRTrainer:
         self.device = device
 
         self.vcr_config = task_configs['vcr']
-        self.data_dir = os.path.join(args.mcl_data_dir, self.vcr_config['data_dir'])
+        self.data_dir = os.path.join(args.climb_data_dir, self.vcr_config['data_dir'])
         self.task_type = self.vcr_config['task_type']
 
         # Model-specific stuff
-        self.visual_mode = model_config['visual_mode']
+        self.visual_input_type = model_config['visual_input_type']
         self.batch2inputs_converter = model_config['batch2inputs_converter']
 
         # Create dataloaders for training and validation
@@ -53,14 +53,14 @@ class VCRTrainer:
                                                 split='train',
                                                 tokenizer=tokenizer,
                                                 task_type=self.task_type,
-                                                visual_mode=self.visual_mode)
+                                                visual_input_type=self.visual_input_type)
     
         self.vcr_val_dataloader = build_vcr_dataloader(args=args,
                                                 data_dir=self.data_dir,
                                                 split='val',
                                                 tokenizer=tokenizer,
                                                 task_type=self.task_type,
-                                                visual_mode=self.visual_mode)
+                                                visual_input_type=self.visual_input_type)
 
         # Training hyperparameters
         self.num_epochs = self.vcr_config['num_epochs']
@@ -166,16 +166,16 @@ class VCRTrainer:
                         sampled_replay_task = replay_memory.sample_replay_task()
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
-                if (step + 1) % 100 == 0:
+                if (step + 1) % wandb_logger.get_log_freq() == 0:
                     log_dict = {'vcr': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
-                    wandb.log(log_dict)
+                    wandb_logger.log(log_dict)
 
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'vcr': {'val_score': eval_score}})
+            wandb_logger.log({'vcr': {'val_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score
@@ -259,7 +259,7 @@ class LowShotVCRTrainer(VCRTrainer):
                 # Do evaluation after epoch
                 eval_score = self.eval(model)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb.log({'vcr': {'val_score': eval_score}})
+                wandb_logger.log({'vcr': {'val_score': eval_score}})
                 if eval_score > best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score

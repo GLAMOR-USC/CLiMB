@@ -103,7 +103,6 @@ vcr_config = {
 imdb_config = {
         'task_name': 'imdb',
         'data_dir': None,
-        'cache_dir': '/data/datasets/MCL/cached_datasets',
         'max_len': 160,
         'num_labels': 2,
         'model_type': 'classification',
@@ -117,7 +116,6 @@ imdb_config = {
 sst2_config = {
         'task_name': 'sst2',
         'data_dir': None,
-        'cache_dir': '/data/datasets/MCL/cached_datasets',
         'max_len': 40,
         'num_labels': 2,
         'model_type': 'classification',

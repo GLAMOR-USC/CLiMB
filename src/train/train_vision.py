@@ -14,8 +14,8 @@ import pickle as pkl
 from PIL import Image
 import copy
 import pdb
-import wandb
 from tqdm import tqdm
+
 import numpy as np
 import torch
 from torch import nn
@@ -30,18 +30,17 @@ from configs.task_configs import task_configs
 from utils.seed_utils import set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-#os.environ["WANDB_START_METHOD"] = "thread"
-#wandb.init(project='vision')
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_vision(args, encoder, task_config, model_config, tokenizer, device):
-    # get upstream_name
-    upstream_name = args.pretrained_model_name.split('/')[-2]
+
+    # get upstream algo name for logging
+    upstream_name = args.checkpoint_name.split('/')[-2]
     for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
-        if short in args.pretrained_model_name:
+        if short in args.checkpoint_name:
             upstream_name += f"_{short}"
             break
     logger.info(f"Upstream Task: {upstream_name}")
@@ -50,6 +49,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
+    # coco-obj-cls (multi-label) uses percentage for low-shot learning; other single-label tasks: N-shot per class
     n_shot = args.num_shot if args.task_name == 'coco-cls' else int(args.num_shot)
     subsample_seed = args.subsample_seed
     output_dir = args.output_dir
@@ -57,7 +57,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
     encoder_dim = model_config['encoder_dim']
-    visual_mode = model_config['visual_mode']
+    visual_input_type = model_config['visual_input_type']
     classifier_class = model_config['classifier_class']
     model = classifier_class(encoder=encoder, 
                              encoder_dim=encoder_dim, 
@@ -65,7 +65,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
 
     model.to(device)
 
-    # Create dataloaders for training and validation
+    # Create dataloaders for training, validation, and test sets
     if args.task_name == 'imagenet':
         from data.vision_datasets.imagenet_dataset import get_data_loader
     elif args.task_name == 'places365':
@@ -166,6 +166,7 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
 
 
 def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir):
+
     tree = lambda: defaultdict(tree)
     all_scores = tree()
     out_fn = os.path.join(output_dir, f'{task_name}_{upstream_name}_results.json')
@@ -239,16 +240,14 @@ def main():
                         help="The name of the vision-only task.")
     parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
                         help="The name of the base pretrained encoder.")
-    parser.add_argument("--model_catog", default='vilt-v-cls', type=str, 
-                        choices=['vilt-vl', 'vilt-l-seq', 'vilt-l-mc', 'vilt-v-cls'],
+    parser.add_argument("--model_catog", default='vilt-vl', type=str,
                         help="The catogory for model class.")
-    parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
-                        help="Name of pretrained model weights to load.")
+    parser.add_argument("--checkpoint_name", default=None, type=str, required=True,
+                        help="Name of the checkpoint model load.")
+    parser.add_argument("--pretrained_model_name", default="dandelin/vilt-b32-mlm", type=str,
+                        help="Name of the pretrained model")
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
-    parser.add_argument("--wandb_project_name", type=str, default="vl-cl",
-                        help="Name of W&B project where experiments are logged.")
-
 
     parser.add_argument("--batch_size", type=int, default=32,
                         help="Batch size.")
@@ -280,15 +279,7 @@ def main():
     # Load the Encoder model
     model_config = model_configs[args.model_catog]
     load_encoder_method = load_encoder_map[args.encoder_name]
-    encoder = load_encoder_method(args.pretrained_model_name, device)
-
-    # Create W&B experiment
-    experiment_name = '{}-{}-{}'.format(args.task_name, args.num_shot, args.subsample_seed)
-    logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
-    wandb.init(project=args.wandb_project_name,
-        name=experiment_name,
-        entity='tejas1995',
-        reinit=True)
+    encoder = load_encoder_method(args.checkpoint_name, device, args.pretrained_model_name)
 
     results = []
     logger.info("-"*100)

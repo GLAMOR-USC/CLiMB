@@ -79,7 +79,7 @@ class VCRDataset(Dataset):
         self.split = split
         self.tokenizer = tokenizer
         self.task_type = task_type
-        #self.visual_mode = visual_mode
+        #self.visual_input_type = visual_input_type
 
         self.annotations_file = os.path.join(data_dir, 'annotation/{}.jsonl'.format(split))
         #self.categories = ['entailment', 'contradiction', 'neutral']
@@ -166,16 +166,16 @@ class VCRDataset(Dataset):
 
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
-def vcr_batch_collate(batch, visual_mode):
+def vcr_batch_collate(batch, visual_input_type):
     
-    if visual_mode == 'pil-image':
+    if visual_input_type == 'pil-image':
         texts, pil_objs, labels = zip(*batch)
 
     return {'raw_texts': list(texts),
             'images': list(pil_objs),
             'labels': torch.LongTensor(labels)}
 
-def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type, visual_mode):
+def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type, visual_input_type):
     
     batch_size = int(args.batch_size/4)
     shuffle = True if split == 'train' else False
@@ -195,7 +195,7 @@ def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type, visual_mod
         num_workers=args.num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=lambda x: vcr_batch_collate(x, visual_mode))
+        collate_fn=lambda x: vcr_batch_collate(x, visual_input_type))
     return dataloader
 
 
@@ -207,7 +207,7 @@ if __name__ == '__main__':
         def __init__(self):
             self.batch_size = 4
             self.num_workers = 2
-            self.visual_mode = 'pil-image'
+            self.visual_input_type = 'pil-image'
     
     args = Args()
     data_dir          = '/data/datasets/MCL/vcr/'
@@ -220,11 +220,11 @@ if __name__ == '__main__':
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     #vcr.VCRDataset(data_dir, split, tokenizer, task_type='answer')
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer', visual_mode=args.visual_mode)
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer', visual_mode=args.visual_mode)
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer', visual_input_type=args.visual_input_type)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer', visual_input_type=args.visual_input_type)
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale', visual_mode=args.visual_mode)
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale', visual_mode=args.visual_mode)
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale', visual_input_type=args.visual_input_type)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale', visual_input_type=args.visual_input_type)
 
     #max_token_len = 0
     #len_over_40 = 0

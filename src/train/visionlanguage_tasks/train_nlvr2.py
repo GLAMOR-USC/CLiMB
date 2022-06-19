@@ -11,8 +11,8 @@ import shutil
 import pickle as pkl
 import copy
 import pdb
-import wandb
 from tqdm import tqdm
+
 import numpy as np
 import torch
 from torch import nn
@@ -20,11 +20,10 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.visionlanguage_datasets.nlvr2_dataset import build_nlvr2_dataloader
+from utils.wandb import wandb_logger
 
 sys.path.insert(0, '.')
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-#os.environ["WANDB_START_METHOD"] = "thread"
-#wandb.init(project='nlvr')
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -41,22 +40,22 @@ class NLVR2Trainer:
         self.device = device
 
         self.nlvr_config = task_configs['nlvr2']
-        self.data_dir = os.path.join(args.mcl_data_dir, self.nlvr_config['data_dir'])
+        self.data_dir = os.path.join(args.climb_data_dir, self.nlvr_config['data_dir'])
 
         # Model-specific stuff
-        self.visual_mode = model_config['visual_mode']
+        self.visual_input_type = model_config['visual_input_type']
         self.batch2inputs_converter = model_config['batch2inputs_converter']
 
         # Create dataloaders for training and validation
         self.nlvr_train_dataloader = build_nlvr2_dataloader(args=args,
                                                     data_dir=self.data_dir,
                                                     split='train',
-                                                    visual_mode=self.visual_mode)
+                                                    visual_input_type=self.visual_input_type)
 
         self.nlvr_val_dataloader = build_nlvr2_dataloader(args=args,
                                                      data_dir=self.data_dir,
                                                      split='val',
-                                                     visual_mode=self.visual_mode)
+                                                     visual_input_type=self.visual_input_type)
 
         # Training hyperparameters
         self.num_epochs = self.nlvr_config['num_epochs']
@@ -163,16 +162,16 @@ class NLVR2Trainer:
                         sampled_replay_task = replay_memory.sample_replay_task()
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
-                if (step + 1) % 100 == 0:
+                if (step + 1) % wandb_logger.get_log_freq() == 0:
                     log_dict = {'nlvr': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
-                    wandb.log(log_dict)
+                    wandb_logger.log(log_dict)
 
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'nlvr': {'val_score': eval_score}})
+            wandb_logger.log({'nlvr': {'val_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score
@@ -254,7 +253,7 @@ class LowShotNLVR2Trainer(NLVR2Trainer):
             if epoch in self.eval_epochs:
                 eval_score = self.eval(model)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb.log({'nlvr': {'val_score': eval_score}})
+                wandb_logger.log({'nlvr': {'val_score': eval_score}})
                 if eval_score > best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score

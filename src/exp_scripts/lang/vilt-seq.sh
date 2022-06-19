@@ -1,4 +1,3 @@
-export WANDB_API_KEY=8cd0c45d6a9418a2997ec6478116a01c14499820
 export TOKENIZERS_PARALLELISM=false
 
 task_arr=("sst2" "imdb")
@@ -31,10 +30,9 @@ do
             do
                 echo "ckpt: $c, n-shot: $n, sample_seed: $s"
                 python -m train.train_language --encoder_name vilt \
-                                        --pretrained_model_name $c \
+                                        --checkpoint_name $c \
                                         --task_name $t \
                                         --output_dir /data/experiments/MCL/lang_only \
-                                        --wandb_project_name vl-cl \
                                         --batch_size 16 \
                                         --model_catog vilt-l-seq \
                                         --num_shot $n \

@@ -56,7 +56,8 @@ class LanguageDataset(Dataset):
             return example['text_a'], example['text_b'], example["label"]
 
 
-def get_data_loader(tokenizer, task_name, split, max_len, batch_size, data_dir=None, n_shot=None, seed=None):
+def get_data_loader(tokenizer, task_name, split, max_len, batch_size, num_workers, data_dir=None, n_shot=None, seed=None):
+
     task_name = task_name.lower()
     processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'commonsenseqa': CommonsenseQAProcessor, 
         'imdb': IMDBProcessor, 'sst2': GLUEProcessor} 
@@ -69,7 +70,7 @@ def get_data_loader(tokenizer, task_name, split, max_len, batch_size, data_dir=N
         dataset, 
         shuffle=(split=='train'), 
         batch_size=batch_size,
-        num_workers=2,
+        num_workers=num_workers,
     )
 
     return dataloader

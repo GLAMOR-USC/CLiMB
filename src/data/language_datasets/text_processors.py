@@ -272,37 +272,3 @@ class GLUEProcessor():
     def get_test_examples(self, data_dir=None):
         return self.test_data
 
-'''
-if __name__ == "__main__":
-    assert len(sys.argv) == 2, "input task name"
-    task_name = sys.argv[1]
-
-    processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'cosmosqa': COSMOSQAProcessor, 
-        'commonsenseqa': CommonsenseQAProcessor, 'imdb': IMDBProcessor, 'sst2': GLUEProcessor} 
-    processor = processor_map[task_name]()
-    
-    if task_name in ['sst2', 'imdb']:
-        data_dir = None
-    else:
-        data_dir = f'/data/datasets/MCL/{task_name}'
-
-    data = processor.get_train_examples(data_dir) # type: list
-    all_length = np.zeros(len(data), int)
-    for i, example in enumerate(data):
-        if task_name == 'sst2':
-            text = example['sentence']
-        elif task_name == 'imdb':
-            text = example['text']
-        elif task_name == 'cosmosqa':
-            text = example['text_a'] + " " + example['text_c']
-            longest_bi = np.argmax(np.array([len(s.split()) for s in example['text_b']]))
-            text += " " + example['text_b'][longest_bi]
-        else:
-            text = example['text_a']
-            assert len(example['text_b'])==5
-            longest_bi = np.argmax(np.array([len(s.split()) for s in example['text_b']]))
-            text += " " + example['text_b'][longest_bi]
-        all_length[i] = len(text.split())
-
-    print(f'{task_name}: {all_length.mean():.1f} ±{all_length.std():.1f}, max: {all_length.max()}')
-'''

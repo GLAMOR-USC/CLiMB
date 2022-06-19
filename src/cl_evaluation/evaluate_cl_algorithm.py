@@ -18,7 +18,6 @@ sys.path.insert(0, '.')
 import numpy as np
 import torch
 from tqdm import tqdm
-import wandb
 
 from transformers import BertTokenizer
 
@@ -62,14 +61,15 @@ def forward_transfer_eval(args, results_file):
 def catastrophic_forgetting_eval(args, results_file, model, task_trainers):
 
     model_config = model_configs[args.encoder_name]
-    batch2inputs_converter = model_config['batch2inputs_converter']
 
+    # Load upstream learning results
     cl_results = json.load(open(results_file))
     assert len(cl_results) == len(args.ordered_cl_tasks)
     output_dir = os.path.dirname(results_file)
 
     logger.info("-"*100)
     catastrophic_forgetting_dict = defaultdict(dict)
+    # Traverse over each task in the upstream CL
     for task_num, task_key in enumerate(args.ordered_cl_tasks):
 
         task_name = task_configs[task_key]['task_name']
@@ -84,8 +84,6 @@ def catastrophic_forgetting_eval(args, results_file, model, task_trainers):
         for prev_task_num in range(task_num):
 
             prev_task_key = args.ordered_cl_tasks[prev_task_num]
-            # Get model path of prev_task_key
-
             prev_task_config = task_configs[prev_task_key]
             prev_task_name = prev_task_config['task_name']
 
@@ -100,8 +98,15 @@ def catastrophic_forgetting_eval(args, results_file, model, task_trainers):
             assert prev_task_results['task_key'] == prev_task_key
             baseline_score = prev_task_results['best_score']
             random_score = task_configs[prev_task_key]['random_baseline_score']
+
             forgetting_perc = 100.0*(baseline_score - eval_score)/(baseline_score-random_score)
             logger.info("Forgetting of {}, after training on {} = {:.2f}%".format(prev_task_name, task_name, forgetting_perc))
-            catastrophic_forgetting_dict[task_key][prev_task_key] = forgetting_perc
+
+            catastrophic_forgetting_dict[task_key][prev_task_key] = {'prev_task': prev_task_key,
+                                                                     'current_task': task_key,
+                                                                     'forgetting': forgetting_perc,
+                                                                     'absolute_transfer_score': eval_score,
+                                                                     'original_prev_task_score': baseline_score,
+                                                                     }
 
     return catastrophic_forgetting_dict

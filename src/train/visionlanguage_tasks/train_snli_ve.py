@@ -12,7 +12,6 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
-import wandb
 
 sys.path.insert(0, '.')
 
@@ -24,6 +23,7 @@ from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.image_datasets.flickr30kimages_dataset import Flickr30KImagesDataset
 from data.visionlanguage_datasets.snli_ve_dataset import build_snli_ve_dataloader
+from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -40,15 +40,15 @@ class SNLIVETrainer:
         self.device = device
 
         self.snli_ve_config = task_configs['snli-ve']
-        self.data_dir = os.path.join(args.mcl_data_dir, self.snli_ve_config['data_dir'])
+        self.data_dir = os.path.join(args.climb_data_dir, self.snli_ve_config['data_dir'])
 
         # Load Flickr30K Images dataset for image data backbone
         images_source = self.snli_ve_config['images_source']
         flickr30k_config = task_configs[images_source]
-        images_dataset = Flickr30KImagesDataset(os.path.join(args.mcl_data_dir, flickr30k_config['data_dir']))
+        images_dataset = Flickr30KImagesDataset(os.path.join(args.climb_data_dir, flickr30k_config['data_dir']))
 
         # Model-specific stuff
-        self.visual_mode = model_config['visual_mode']
+        self.visual_input_type = model_config['visual_input_type']
         self.batch2inputs_converter = model_config['batch2inputs_converter']
 
         # Create dataloaders for training and validation
@@ -57,14 +57,14 @@ class SNLIVETrainer:
                                                                  images_dataset=images_dataset,
                                                                  split='train',
                                                                  tokenizer=self.tokenizer,
-                                                                 visual_mode=self.visual_mode)
+                                                                 visual_input_type=self.visual_input_type)
 
         self.snli_ve_dev_dataloader = build_snli_ve_dataloader(args=args,
                                                                data_dir=self.data_dir,
                                                                images_dataset=images_dataset,
                                                                split='dev',
                                                                tokenizer=tokenizer,
-                                                               visual_mode=self.visual_mode)
+                                                               visual_input_type=self.visual_input_type)
 
         # Training hyperparameters
         self.num_epochs = self.snli_ve_config['num_epochs']
@@ -170,16 +170,16 @@ class SNLIVETrainer:
                         sampled_replay_task = replay_memory.sample_replay_task()
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
-                if (step + 1) % 100 == 0:
+                if (step + 1) % wandb_logger.log_freq == 0:
                     log_dict = {'snli-ve': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
-                    wandb.log(log_dict)
+                    wandb_logger.log(log_dict)
 
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'snli-ve': {'dev_score': eval_score}})
+            wandb_logger.log({'snli-ve': {'dev_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score
@@ -261,15 +261,11 @@ class LowShotSNLIVETrainer(SNLIVETrainer):
 
                 loss, output, _, _ = self.train_step(model, batch, optimizer, scheduler)
 
-                #if (step + 1) % 100 == 0:
-                #    log_dict = {'snli-ve': {'loss': loss.item()}}
-                #    wandb.log(log_dict)
-
             if epoch in self.eval_epochs:
                 # Do evaluation after epoch
                 eval_score = self.eval(model)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb.log({'snli-ve': {'dev_score': eval_score}})
+                wandb_logger.log({'snli-ve': {'dev_score': eval_score}})
                 if eval_score > best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score

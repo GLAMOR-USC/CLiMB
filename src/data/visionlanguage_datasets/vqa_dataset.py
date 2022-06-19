@@ -34,13 +34,13 @@ logging.basicConfig(
 
 class VQADataset(Dataset):
 
-    def __init__(self, data_dir, images_dataset, split, tokenizer, visual_mode='raw'):
+    def __init__(self, data_dir, images_dataset, split, tokenizer, visual_input_type='raw'):
 
         self.images_dataset = images_dataset
         self.data_dir = data_dir
         self.split = split
         self.tokenizer = tokenizer
-        self.visual_mode = visual_mode
+        self.visual_input_type = visual_input_type
 
         self.annotations_file = os.path.join(data_dir, 'v2_mscoco_{}2014_annotations.json'.format(split))
         self.questions_file = os.path.join(data_dir, 'v2_OpenEnded_mscoco_{}2014_questions.json'.format(split))
@@ -146,7 +146,7 @@ class VQADataset(Dataset):
 
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
-def vqa_batch_collate(batch, visual_mode):
+def vqa_batch_collate(batch, visual_input_type):
 
     #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
     pad_token = 0   # tokenizer.pad_token_id
@@ -174,11 +174,11 @@ def vqa_batch_collate(batch, visual_mode):
 
     # Stack the image tensors, doing padding if necessary for the sequence of region features
     image_tensors = [x[2] for x in batch]
-    if visual_mode == 'pil-image':
+    if visual_input_type == 'pil-image':
         images = image_tensors                                          # Not actually tensors for this option, list of PIL.Image objects
-    if visual_mode == 'raw':
+    if visual_input_type == 'raw':
         images = torch.stack(image_tensors, dim=0)               # Stacks individual raw image tensors to give (B, 3, W, H) tensor
-    elif visual_mode == 'fast-rcnn':
+    elif visual_input_type == 'fast-rcnn':
         max_len = max([t.shape[0] for t in image_tensors])
         image_tensors_padded = []
         for i in range(len(image_tensors)):
@@ -195,21 +195,21 @@ def vqa_batch_collate(batch, visual_mode):
             'target_scores': batch_scores,
             'labels': batch_labels}
 
-def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_mode):
+def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_input_type):
 
     batch_size = args.batch_size
     shuffle = True if split == 'train' else False
 
     logger.info("Creating VQAv2 {} dataloader with batch size of {}".format(split, batch_size))
 
-    dataset = VQADataset(data_dir, images_dataset, split, tokenizer, visual_mode)
+    dataset = VQADataset(data_dir, images_dataset, split, tokenizer, visual_input_type)
     num_labels = dataset.num_labels
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers=args.num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=lambda x: vqa_batch_collate(x, visual_mode))
+        collate_fn=lambda x: vqa_batch_collate(x, visual_input_type))
     return dataloader
 
 if __name__ == '__main__':
@@ -220,12 +220,12 @@ if __name__ == '__main__':
             self.batch_size = 4
             self.shuffle = True
             self.num_workers = 2
-            self.visual_mode = 'pil-image'
+            self.visual_input_type = 'pil-image'
     args = Args()
 
     images_dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/')
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    vqa_dataloader = build_vqa_dataloader(args, data_dir, images_dataset, 'val', tokenizer, args.visual_mode)
+    vqa_dataloader = build_vqa_dataloader(args, data_dir, images_dataset, 'val', tokenizer, args.visual_input_type)
 
     for batch in vqa_dataloader:
         pdb.set_trace() 

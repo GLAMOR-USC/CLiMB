@@ -24,14 +24,14 @@ logging.basicConfig(
 
 class NLVR2Dataset(Dataset):
 
-    def __init__(self, data_dir, split, visual_mode):
+    def __init__(self, data_dir, split, visual_input_type):
         # TODO
-        if visual_mode != "pil-image":
+        if visual_input_type != "pil-image":
             raise NotImplementedError("Have not implemented other inputs for NLVR2 images!")
 
         self.data_dir = data_dir
         self.num_labels = 2
-        self.visual_model = visual_mode
+        self.visual_input_typel = visual_input_type
         self.split = split
 
         rename_split = {'train': 'train', 'val': 'dev', 'test': 'test1'}
@@ -90,7 +90,7 @@ class NLVR2Dataset(Dataset):
     def __len__(self):
         return self.n_examples
 
-    #TODO: implement visual_mode = faster-RCNN 
+    #TODO: implement visual_input_type = faster-RCNN 
     def __getitem__(self, index):
         example = self.data[index]
         img1 = self.get_pil_image(example["image_id_0"])
@@ -113,24 +113,24 @@ class NLVR2Dataset(Dataset):
 
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
-#TODO: implement visual_mode = faster-RCNN 
-def nlvr2_batch_collate(batch, visual_mode):
+#TODO: implement visual_input_type = faster-RCNN 
+def nlvr2_batch_collate(batch, visual_input_type):
     raw_texts, pil_objs, labels = zip(*batch)
     return {'raw_texts': list(raw_texts), 
             'images': pil_objs, 
             'labels': torch.LongTensor(labels)}
     
 
-def build_nlvr2_dataloader(args, data_dir, split, visual_mode):
+def build_nlvr2_dataloader(args, data_dir, split, visual_input_type):
     logger.info("Creating NLVRv2 {} dataloader with batch size of {}".format(split, int(args.batch_size/2)))
 
-    dataset = NLVR2Dataset(data_dir, split, visual_mode)
+    dataset = NLVR2Dataset(data_dir, split, visual_input_type)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers = args.num_workers,
         batch_size = int(args.batch_size/2),
         shuffle = (split=='train'),
-        collate_fn = lambda x: nlvr2_batch_collate(x, visual_mode)
+        collate_fn = lambda x: nlvr2_batch_collate(x, visual_input_type)
         )
     return dataloader
 

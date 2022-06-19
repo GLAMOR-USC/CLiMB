@@ -8,6 +8,7 @@ CLiMB is a benchmark to study the challenge of learning multimodal tasks in a CL
 
 CLiMB evaluates candidate CL models and learning algorithms in two phases. For Phase I, Upstream Continual Learning, a pre-trained multimodal model is trained on a sequence of vision-and-language tasks, and evaluated after each task on its degree of Forgetting of past tasks and Knowledge Transfer to the next task. For Phase II, after each multimodal task the model is evaluated for its Downstream Low-Shot Transfer capability on both multimodal and unimodal tasks.
 
+---
 ## Setup
 
 1. Create Conda environment with Python 3.6
@@ -26,6 +27,7 @@ cd src/adapter-transformers
 pip install -e .
 ```
 
+---
 ## Data
 
 ### [Downloading and Organizing Existing Tasks](DATA_DOWNLOAD.md)
@@ -36,6 +38,7 @@ pip install -e .
 
 Coming soon!
 
+---
 ## Models
 
 ### Existing Models
@@ -46,7 +49,10 @@ The initial implementation of CLiMB includes two Vision-Language encoders: ViLT 
 
 Coming soon!
 
+---
 ## Training in CLiMB
+
+All experiment scripts are executed from within the ```src/``` directory.
 
 ### Upstream Continual Learning
 
@@ -65,22 +71,35 @@ Sample CL training scripts for training a ViLT encoder on the task order VQAv2 -
 
 ### Downstream Low-Shot Transfer
 
+To run downstream tasks, you need to first run upstream tasks and save the checkpoints.
+
 #### Low-Shot Multimodal Transfer
 
-TODO: Tejas
+For low-shot multimodal transfer, the `train/train_lowshot_multimodal.py` script takes all the CL checkpoints from a single upstream CL experiment, and does low-shot transfer of each checkpoint to the unseen multimodal tasks (e.g. if the task order is VQAv2 -> NLVR2 -> SNLI-VE -> VCR, then the VQA checpoint is tuned on low-shot NLVR2, SNLI-VE, and VCR, whereas the NLVR2 checkpoint is transfered to low-shot SNLI-VE and VCR only. An example script can be seen [here](sh exp_scripts/lowshot_multimodal/vqa_nlvr_snlive_vcr/vilt-sequential_ft.sh).
+
+For low-shot unimodal transfer, you need to specify a particular upstream CL checkpoint. You can then run downstream tasks with the following scripts:
 
 #### Low-Shot Language-Only Tasks
 
-TODO: Charlotte
+##### SST-2, IMDb
+-  ``` bash exp_scripts/lang/vilt-seq.sh ``` // for ViLT encoder
+
+-  ``` bash exp_scripts/lang/viltbert-seq.sh ``` // for ViLT-BERT encoder
+
+##### PIQA, HellaSwag, CommonsenseQA
+-  ``` bash exp_scripts/lang/vilt-mc.sh ``` // for ViLT encoder
+
+-  ``` bash exp_scripts/lang/viltbert-mc.sh ``` // for ViLT-BERT encoder
 
 #### Low-Shot Vision-Only Tasks
 
-TODO: Charlotte
+##### ImageNet, iNaturalist2019, Places365
+-  ``` bash exp_scripts/vision/vilt-cls.sh ```
 
-## License
+##### COCO-object
+-  ``` bash exp_scripts/vision/vilt-coco-obj.sh ```
 
-MIT License
-
+---
 ## Contact
 
 Questions or issues? Contact tejas.srinivasan@usc.edu

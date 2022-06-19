@@ -12,7 +12,6 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
-import wandb
 
 sys.path.insert(0, '.')
 
@@ -24,6 +23,7 @@ from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
 from data.visionlanguage_datasets.vqa_dataset import build_vqa_dataloader
+from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -40,17 +40,17 @@ class VQATrainer:
         self.device = device
 
         self.vqa_config = task_configs['vqa']
-        self.data_dir = os.path.join(args.mcl_data_dir, self.vqa_config['data_dir'])
+        self.data_dir = os.path.join(args.climb_data_dir, self.vqa_config['data_dir'])
 
         # Model-specific stuff
-        self.visual_mode = model_config['visual_mode']
+        self.visual_input_type = model_config['visual_input_type']
         self.batch2inputs_converter = model_config['batch2inputs_converter']
 
         # Load COCO Images dataset for image data backbone
         images_source = self.vqa_config['images_source']
         mscoco_config = task_configs[images_source]
-        self.images_dataset = MSCOCOImagesDataset(coco_dir=os.path.join(args.mcl_data_dir, mscoco_config['data_dir']),
-                                                  feats_type=args.visual_mode)
+        self.images_dataset = MSCOCOImagesDataset(coco_dir=os.path.join(args.climb_data_dir, mscoco_config['data_dir']),
+                                                  feats_type=args.visual_input_type)
 
         # Create dataloaders for training and validation
         self.vqa_train_dataloader = build_vqa_dataloader(args=args,
@@ -58,14 +58,14 @@ class VQATrainer:
                                                     images_dataset=self.images_dataset,
                                                     split='train',
                                                     tokenizer=tokenizer,
-                                                    visual_mode=self.visual_mode)
+                                                    visual_input_type=self.visual_input_type)
 
         self.vqa_val_dataloader = build_vqa_dataloader(args=args,
                                                   data_dir=self.data_dir,
                                                   images_dataset=self.images_dataset,
                                                   split='val',
                                                   tokenizer=tokenizer,
-                                                  visual_mode=self.visual_mode)
+                                                  visual_input_type=self.visual_input_type)
 
         # Training hyperparameters
         self.num_epochs = self.vqa_config['num_epochs']
@@ -177,16 +177,16 @@ class VQATrainer:
                         sampled_replay_task = replay_memory.sample_replay_task()
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
-                if (step + 1) % 100 == 0:
+                if (step + 1) % wandb_logger.get_log_freq() == 0:
                     log_dict = {'vqa': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
-                    wandb.log(log_dict)
+                    wandb_logger.log(log_dict)
 
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'vqa': {'val_score': eval_score}})
+            wandb_logger.log({'vqa': {'val_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score
@@ -271,7 +271,7 @@ class LowShotVQATrainer(VQATrainer):
                 # Do evaluation after epoch
                 eval_score = self.eval(model)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb.log({'vqa': {'val_score': eval_score}})
+                wandb_logger.log({'vqa': {'val_score': eval_score}})
                 if eval_score > best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score

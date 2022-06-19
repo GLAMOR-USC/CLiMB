@@ -48,3 +48,61 @@ data
 ```
 
 Items ending with `/` are directories, typically containing a large number of images. The `drawn_images` folder for the VCR task can be generated from the original `vcr1images`, using the scripts available [here](https://github.com/rowanz/merlot/tree/main/downstream/vcr/data).
+
+## Language-Only Tasks
+
+CLiMB initially includes five language-only tasks: 
+- [IMDb](https://huggingface.co/datasets/imdb)
+- [SST-2](https://huggingface.co/datasets/glue/viewer/sst2)
+- [PIQA](https://yonatanbisk.com/piqa/data/)
+- [HellaSwag](https://github.com/rowanz/hellaswag/tree/master/data)
+- [CommonsenseQA](https://www.tau-nlp.sites.tau.ac.il/commonsenseqa)
+
+We provide the script ```utils/download_lang_mc.sh``` for downloading multiple-choice tasks from the official websites linked above.
+*Note:* we split our dev set (held-out) from the training set for hyper-parameter tuning and use the original dev set as the test set, as we do not have the labels of the original test set.
+
+## Vision-Only Tasks
+
+CLiMB initially includes four vision-only tasks: 
+- [ImageNet-1000](https://image-net.org/download.php)
+- [iNaturalist 2019](https://github.com/visipedia/inat_comp/tree/master/2019)
+- [Places365](http://data.csail.mit.edu/places/places365/places365standard_easyformat.tar)
+- [COCO multi-label object classification](https://cocodataset.org/#download)
+
+
+Data files for these four tasks can be downloaded from their respective websites. The data files are organized as follow:
+
+```
+YOUR_DATA_DIR
+├── ILSVRC2012/
+|   ├── train/
+|   |   ├── n01440764/
+|   |   ├── n01443537/
+|   |   └── ...
+|   ├── val/
+|   |   └── ILSVRC2012_val_*.JPEG
+|   └── LOC_val_solution.csv
+|── iNat2019/
+|   ├── train_val2019/
+|   |   ├── Amphibians/
+|   |   ├── Birds/
+|   |   └── ...
+|   ├── train2019.json
+|   └── val2019.json
+|── Places365/
+|   ├── train/
+|   |   ├── airfield/
+|   |   ├── airplane_cabin/
+|   |   └── ...
+|   └── val/
+|       ├── airfield/
+|       ├── airplane_cabin/
+|       └── ...
+└── ms-coco/
+    ├── images/
+    └── detections/
+        └── annotations/
+            ├── instances_train2017.json
+            └── instances_val2017.json
+```
+*Note:* we split our dev set (held-out) from the training set for hyper-parameter tuning and use the original dev set as the test set, as we do not have the labels of the original test set.

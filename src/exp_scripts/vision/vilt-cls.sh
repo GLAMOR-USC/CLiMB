@@ -1,4 +1,3 @@
-export WANDB_API_KEY=8cd0c45d6a9418a2997ec6478116a01c14499820
 export TOKENIZERS_PARALLELISM=false
 
 task_arr=("inat2019" "places365" "imagenet")
@@ -28,10 +27,9 @@ do
             do
                 echo "ckpt: $c, n-shot: $n, sample_seed: $s"
                 python -m train.train_vision --encoder_name vilt \
-                                        --pretrained_model_name $c \
+                                        --checkpoint_name $c \
                                         --task_name $t \
                                         --output_dir /data/experiments/MCL/vision_only \
-                                        --wandb_project_name vl-cl \
                                         --batch_size 32 \
                                         --model_catog vilt-v-cls \
                                         --num_shot $n \

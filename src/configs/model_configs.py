@@ -5,7 +5,7 @@ ALLOWED_CL_ENCODERS = ['vilt', 'viltbert']
 
 vilt_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
+    'visual_input_type': 'pil-image',
     'encoder_class': ViltEncoderWrapper,
     'batch2inputs_converter': convert_batch_to_vilt_input_dict,
     'encoder_name': 'ViLT'
@@ -13,21 +13,21 @@ vilt_config = {
 
 vilt_lang_seq_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
+    'visual_input_type': 'pil-image',
     'encoder_class': ViltEncoderWrapper,
     'classifier_class': ViltForSequenceClassification,
     'batch2inputs_converter': convert_seq_batch_to_vilt_input_dict 
 }
 vilt_lang_mc_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
+    'visual_input_type': 'pil-image',
     'encoder_class': ViltEncoderWrapper,
     'classifier_class': ViltForMultipleChoice,
     'batch2inputs_converter': convert_mc_batch_to_vilt_input_dict
 }
 vilt_vision_cls_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
+    'visual_input_type': 'pil-image',
     'encoder_class': ViltEncoderWrapper,
     'classifier_class': ViltForImageClassification,
     'batch2inputs_converter': convert_batch_to_vilt_input_dict
@@ -35,22 +35,22 @@ vilt_vision_cls_config = {
 
 viltbert_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
+    'visual_input_type': 'pil-image',
     'encoder_class': ViltBertEncoderWrapper,
     'batch2inputs_converter': convert_batch_to_viltbert_input_dict,
     'encoder_name': 'ViLT-BERT'
 }
 viltbert_lang_seq_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
-    'encoder_class': ViltEncoderWrapper,
+    'visual_input_type': 'pil-image',
+    'encoder_class': ViltBertEncoderWrapper,
     'classifier_class': ViltBertForSequenceClassification,
     'batch2inputs_converter': convert_seq_batch_to_vilt_input_dict 
 }
 viltbert_lang_mc_config = {
     'encoder_dim': 768,
-    'visual_mode': 'pil-image',
-    'encoder_class': ViltEncoderWrapper,
+    'visual_input_type': 'pil-image',
+    'encoder_class': ViltBertEncoderWrapper,
     'classifier_class': ViltBertForMultipleChoice,
     'batch2inputs_converter': convert_mc_batch_to_vilt_input_dict
 }

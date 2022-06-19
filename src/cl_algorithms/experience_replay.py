@@ -1,9 +1,10 @@
 import random
-import wandb
 import logging
 
 from torch import nn
 from torch.optim import AdamW
+
+from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class ExperienceReplayMemory:
         replay_loss, output, _, _ = task_trainer.train_step(model, replay_batch, optimizer)
 
         logger.info("{} replay step: loss = {:.5f}".format(task_config['task_name'], replay_loss.item()))
-        wandb.log({task_key: {'loss': replay_loss.item()}})
+        wandb_logger.log({task_key: {'loss': replay_loss.item()}})
         return replay_loss
 
 class TaskMemoryBuffer:
@@ -62,7 +63,6 @@ class TaskMemoryBuffer:
             self.batch_size = int(args.batch_size/4)
         else:
             self.batch_size = args.batch_size
-        self.visual_mode = args.visual_mode
 
         self.memory_percentage = memory_percentage                      # Percent of training samples to store in memory
         assert self.memory_percentage < 1.0

@@ -1,4 +1,3 @@
-export WANDB_API_KEY=8cd0c45d6a9418a2997ec6478116a01c14499820
 export TOKENIZERS_PARALLELISM=false
 
 python -m train.train_upstream_continual_learning --encoder_name vilt \
@@ -8,9 +7,9 @@ python -m train.train_upstream_continual_learning --encoder_name vilt \
                         --memory_percentage 0.01 \
 			--memory_sampling_strategy random \
 			--replay_frequency 100 \
-			--mcl_data_dir /data/datasets/MCL/ \
+			--climb_data_dir /data/datasets/MCL/ \
                         --do_train \
 			--do_eval \
                         --output_dir /data/experiments/MCL/ \
-                        --wandb_project_name vl-cl \
+                        --do_wandb_logging \
                         --batch_size 60

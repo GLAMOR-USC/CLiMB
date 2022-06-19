@@ -18,7 +18,6 @@ sys.path.insert(0, '.')
 import numpy as np
 import torch
 from tqdm import tqdm
-import wandb
 
 from transformers import BertTokenizer
 from transformers.adapters import AdapterConfig
@@ -27,17 +26,20 @@ from modeling import load_encoder_map, continual_learner_map
 
 from cl_algorithms import ExperienceReplayMemory, EWC
 from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
+
 from configs.model_configs import model_configs, ALLOWED_CL_ENCODERS
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from configs.adapter_configs import ADAPTER_MAP
+from configs.wandb_config import wandb_config
+
 from utils.seed_utils import set_seed
+from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu")
-#device = torch.device("cpu")
 
 def main():
 
@@ -58,7 +60,7 @@ def main():
                                                                             'freeze_encoder',
                                                                             'freeze_bottom_k_layers'],
                         help="Name of Continual Learning algorithm used.")
-    parser.add_argument("--mcl_data_dir", type=str, required=True, default='/data/datasets/MCL/',
+    parser.add_argument("--climb_data_dir", type=str, required=True, default='/data/datasets/MCL/',
                         help="Directory where all the MCL data is stored")
     parser.add_argument("--do_train", action='store_true',
                         help="If True, train the model on these tasks")
@@ -91,8 +93,8 @@ def main():
 
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
-    parser.add_argument("--wandb_project_name", type=str, default="climb-cl",
-                        help="Name of W&B project where experiments are logged.")
+    parser.add_argument("--do_wandb_logging", action='store_true',
+                        help="Log experiments in W&B.")
 
     parser.add_argument("--batch_size", type=int, default=32,
                         help="Batch size.")
@@ -104,7 +106,7 @@ def main():
     args = parser.parse_args()
     args.ordered_cl_tasks = args.ordered_cl_tasks.split(',')
 
-    # --------------------- Set up experiment directories
+    # --------------------- Set up experiment directories ---------------------
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
     if args.cl_algorithm == 'adapter':
         experiment_name = '{}_{}'.format(experiment_name, args.adapter_config)
@@ -146,7 +148,7 @@ def main():
     encoder = load_encoder_method(args.pretrained_model_name, device)
     continual_learner_class = continual_learner_map[args.encoder_name]
     model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
-    args.visual_mode = model_config['visual_mode']
+    args.visual_input_type = model_config['visual_input_type']
 
 
     # --------------------- CL algorithm-specific initializations  ------------------------------------------
@@ -159,7 +161,7 @@ def main():
         replay_memory = ExperienceReplayMemory()
 
     elif args.cl_algorithm == 'adapter':
-        # Create and asdd Adapters for each task
+        # Create and add Adapters for each task
         adapter_config = AdapterConfig.load(args.adapter_config)
         config_dict = adapter_config.to_dict()
         if args.adapter_reduction_factor > 0:
@@ -195,13 +197,12 @@ def main():
     if args.do_train:
 
         # Create W&B experiment
-        logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
-        wandb.init(project=args.wandb_project_name,
-            name=experiment_name,
-            entity='las-cl',
-            reinit=True)
+        if args.do_wandb_logging:
+            logger.info('W&B project: {}, experiment: {}'.format(wandb_config['project_name'], experiment_name))
+            wandb_logger.initialize(wandb_config=wandb_config,
+                                    experiment_name=experiment_name)
 
-
+        # If continuing an already-started experiment, and old upstream results were detected, then load the old results from json
         results = []
         if os.path.isfile(results_file):
             results = json.load(open(results_file))
@@ -298,12 +299,14 @@ def main():
 
     if args.do_eval:
 
-        # Forward transfer from continual learning, by comparing to single-task finetuning score
         logger.info("-"*100)
+
+        # Forward transfer from continual learning, by comparing to single-task finetuning score
         logger.info("Evaluating FORWARD TRANSFER of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
         forward_transfer_dict = forward_transfer_eval(args, results_file)
         average_relative_gain = sum(list(forward_transfer_dict.values()))/len(forward_transfer_dict)
         logger.info("Average forward transfer gain = {:.2f}%".format(average_relative_gain))
+
         logger.info("-"*100)
 
         # Forgetting evaluation
@@ -318,9 +321,12 @@ def main():
             for task_num, task_key in enumerate(args.ordered_cl_tasks):
                 assert task_key in task_trainers.keys()
 
+        # Run the forgetting evaluation, and save results to file
+        forgetting_results_file = os.path.join(output_dir, 'forgetting_results.json')
         logger.info("Evaluating CATASTROPHIC FORGETTING of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
         catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, task_trainers)
-        # TODO: Aggregate catastrophic forgetting results
+        json.dump(catastrophic_forgetting_dict, open(forgetting_results_file, 'w'))
+        
         logger.info("-"*100)
 
 if __name__ == '__main__':

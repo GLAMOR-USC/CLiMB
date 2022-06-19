@@ -21,8 +21,6 @@ logging.basicConfig(
         level=logging.INFO)
 transformers_logging.set_verbosity_error()
 
-
-
 class ViltEncoderWrapper(nn.Module):
 
     def __init__(self, processor, vilt, device):
@@ -32,6 +30,7 @@ class ViltEncoderWrapper(nn.Module):
         args:
         processor - instance of ViltProcessor
         vilt - instance of ViltModel class
+        device - gpu/cuda
         '''
 
         super().__init__()
@@ -47,6 +46,9 @@ class ViltEncoderWrapper(nn.Module):
         self.processor.feature_extractor.size = img_size
 
     def reallocate_text_image(self, pretrained_pos_emb, max_len, img_size):
+        '''
+        Re-allocate some of the image token slots to the language position embeddings
+        '''
         vilt_config = self.vilt.config
         assert max_len % vilt_config.max_position_embeddings == 0
 
@@ -65,13 +67,21 @@ class ViltEncoderWrapper(nn.Module):
             register_buffer("position_ids", torch.arange(max_len).expand((1, -1)))
 
     def process_inputs(self, images, texts):
+        '''
+        Returns encodings that can be inputted to the ViLT transformer
+        images - list of PIL Image objects
+        texts - list of text strings
+        encodings - dictionary, where each key corresponds to a different argument of the vilt's forward method
+        '''
         encodings = self.processor(images=images, text=texts, max_length=self.max_text_length,
             padding=True, truncation=True, return_tensors='pt').to(self.device)
-
-        #debug(self.processor, encodings)
         return encodings
 
     def expand_modality_type_embeddings(self, type_vocab_size=3):
+        '''
+        ViLT contains only 2 token type embeddings - some tasks (like NLVR) require three token type embeddings
+        Method makes a copy second token type embedding into a new third embedding parameter
+        '''
         self.vilt.config.modality_type_vocab_size = type_vocab_size
         #https://github.com/dandelin/ViLT/blob/762fd3975c180db6fc88f577cf39549983fa373a/vilt/modules/vilt_module.py#L85
         emb_data = self.vilt.embeddings.token_type_embeddings.weight.data
@@ -86,11 +96,17 @@ class ViltEncoderWrapper(nn.Module):
         return output.pooler_output
 
     def freeze_all_weights(self):
+        '''
+        Freeze all parameters in self.vilt
+        '''
 
         for p in self.vilt.parameters():
             p.requires_grad = False
 
     def freeze_bottom_k_layers(self, k):
+        '''
+        Freeze embedding parameters and bottom K transformer layer parameters
+        '''
 
         assert k < len(self.vilt.encoder.layer)
         for p in self.vilt.embeddings.parameters():
@@ -105,6 +121,10 @@ class ViltContinualLearner(nn.Module):
     def __init__(self, ordered_cl_tasks, encoder, encoder_dim, task_configs):
 
         '''
+        The actual Continual Learning model, that consists of a vision-language encoder and task-specific heads on top
+
+        arguments:
+        ordered_cl_tasks - list of CL task keys that will be encountered by the ContinualLearner
         encoder - instance of ViltEncoderWrapper class
         encoder_dim - output dimension of vilt encoder
         num_labels - number of labels for classification task
@@ -126,6 +146,10 @@ class ViltContinualLearner(nn.Module):
 
     def add_task_layer(self, task_key, task_config):
 
+        '''
+        for a new task, add task-specific head according to its task_config parameters
+        '''
+
         num_labels = task_config['num_labels']
         if task_config['model_type'] == 'classification':
             num_images = task_config['num_images']
@@ -138,12 +162,6 @@ class ViltContinualLearner(nn.Module):
             self.task_layer_dict[task_key] = clf_layer
 
         elif task_config['model_type'] == 'multi-choice':
-            #clf_layer = nn.Sequential(
-            #                nn.Linear(self.encoder_dim, self.encoder_dim*2),
-            #                nn.LayerNorm(self.encoder_dim*2),
-            #                nn.GELU(),
-            #                nn.Linear(self.encoder_dim*2, 1)
-            #            )
             clf_layer = nn.Sequential(
                             nn.Dropout(0.1),
                             nn.Linear(self.encoder_dim, 1)
@@ -171,6 +189,10 @@ class ViltContinualLearner(nn.Module):
         return encoder_output, output_logits
 
     def forward_multi_images(self, task_key, images, texts, num_images=2):
+
+        '''
+        For tasks like NLVR2, do multiple text-image passes with each image and aggregate results
+        '''
 
         flat_images_list = list(itertools.chain(*images))
         encodings = self.vilt_encoder.process_inputs(flat_images_list, texts)
@@ -202,6 +224,10 @@ class ViltContinualLearner(nn.Module):
         return pooled_output, output_logits
 
     def forward_multi_choice(self, task_key, images, texts, num_choices):
+
+        '''
+        For tasks like VCR, do multiple text-image passes with each text, and select the text with highest score
+        '''
 
         texts_list = list(itertools.chain(*texts))
         encodings = self.vilt_encoder.process_inputs(images, texts_list)
@@ -237,6 +263,9 @@ class ViltContinualLearner(nn.Module):
 
         return self.vilt_encoder
 
+    '''
+    Adapter-specific methods
+    '''
     def add_adapter(self, task_key, config):
 
         self.vilt_encoder.vilt.add_adapter(task_key, config)
@@ -253,6 +282,9 @@ class ViltContinualLearner(nn.Module):
 class ViltForImageClassification(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):
+        '''
+        Modified ViLT model for image classification tasks
+        '''
 
         super().__init__()
         self.encoder_dim = encoder_dim
@@ -275,10 +307,13 @@ class ViltForImageClassification(nn.Module):
 class ViltForSequenceClassification(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):
+        '''
+        Modified ViLT model for text classification tasks
+        '''
 
         super().__init__()
         self.encoder_dim = encoder_dim
-        self.vilt_encoder = encoder
+        self.encoder = encoder
         self.clf_layer = nn.Sequential(
                             nn.Linear(encoder_dim, encoder_dim*2),
                             nn.LayerNorm(encoder_dim*2),
@@ -289,12 +324,12 @@ class ViltForSequenceClassification(nn.Module):
 
     def forward(self, images, texts):
 
-        encodings = self.vilt_encoder.process_inputs(images, texts)
+        encodings = self.encoder.process_inputs(images, texts)
         # expand to batch size
         bs = len(encodings['input_ids'])
         encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
         encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
-        encoder_output = self.vilt_encoder(**encodings)
+        encoder_output = self.encoder(**encodings)
 
         output_logits = self.clf_layer(encoder_output)
         return output_logits
@@ -303,115 +338,43 @@ class ViltForSequenceClassification(nn.Module):
 class ViltForMultipleChoice(nn.Module):
 
     def __init__(self, encoder, encoder_dim, num_labels):
+        '''
+        Modified ViLT model for text multiple-choice tasks
+        '''
 
         super().__init__()
         self.encoder_dim = encoder_dim
         self.num_labels = num_labels
-        self.vilt_encoder = encoder
+        self.encoder = encoder
         self.clf_layer = nn.Sequential(
                             nn.Dropout(0.1),
                             nn.Linear(encoder_dim, 1)
                         )
 
     def forward(self, images, texts):
-        encodings = self.vilt_encoder.process_inputs(images, texts)
+        encodings = self.encoder.process_inputs(images, texts)
         # unflat_input_ids = encodings['input_ids'].view(self.num_labels, 32, -1).transpose(0, 1)
         bs = len(encodings['input_ids'])
         encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
         encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
-        encoder_output = self.vilt_encoder(**encodings)
+        encoder_output = self.encoder(**encodings)
         reshape_output = encoder_output.view(self.num_labels, -1, self.encoder_dim).transpose(0, 1).contiguous()
 
         output_logits = self.clf_layer(reshape_output).squeeze()
         return output_logits
 
 
-class ViltBertForSequenceClassification(nn.Module):
+def load_vilt_encoder(checkpoint_name, device, pretrained_vilt_name="dandelin/vilt-b32-mlm"):
 
-    def __init__(self, encoder, encoder_dim, num_labels):
-
-        super().__init__()
-        self.encoder_dim = encoder_dim
-        self.vilt_encoder = encoder
-        self.clf_layer = nn.Sequential(
-                            nn.Linear(encoder_dim, encoder_dim*2),
-                            nn.LayerNorm(encoder_dim*2),
-                            nn.GELU(),
-                            nn.Linear(encoder_dim*2, num_labels)
-                        )
-
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-
-    @torch.no_grad()
-    def get_bert_outputs(self, encodings):
-        outputs = self.bert(encodings['input_ids'],
-            attention_mask=encodings['attention_mask'], 
-            token_type_ids=encodings['token_type_ids'])
-        return outputs.last_hidden_state #[bs, max_seq_len, hidden_size]
-
-    def forward(self, images, texts):
-
-        encodings = self.vilt_encoder.process_inputs(images, texts)
-        # expand to batch size
-        bs = len(encodings['input_ids'])
-        encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
-        encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
-
-        encodings['inputs_embeds'] = self.get_bert_outputs(encodings)
-        encodings['input_ids'] = None
-
-        encoder_output = self.vilt_encoder(**encodings)
-
-        output_logits = self.clf_layer(encoder_output)
-        return output_logits
-        
-
-class ViltBertForMultipleChoice(nn.Module):
-
-    def __init__(self, encoder, encoder_dim, num_labels):
-
-        super().__init__()
-        self.encoder_dim = encoder_dim
-        self.num_labels = num_labels
-        self.vilt_encoder = encoder
-        self.clf_layer = nn.Sequential(
-                            nn.Dropout(0.1),
-                            nn.Linear(encoder_dim, 1)
-                        )
-
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-
-    @torch.no_grad()
-    def get_bert_outputs(self, encodings):
-        outputs = self.bert(encodings['input_ids'],
-            attention_mask=encodings['attention_mask'], 
-            token_type_ids=encodings['token_type_ids'])
-        return outputs.last_hidden_state #[bs, max_seq_len, hidden_size]
-
-    def forward(self, images, texts):
-        encodings = self.vilt_encoder.process_inputs(images, texts)
-        # unflat_input_ids = encodings['input_ids'].view(self.num_labels, 32, -1).transpose(0, 1)
-        bs = len(texts)
-        encodings['pixel_values'] = encodings['pixel_values'].expand([bs, *encodings['pixel_values'].shape[1:]])
-        encodings['pixel_mask'] = encodings['pixel_mask'].expand([bs, *encodings['pixel_mask'].shape[1:]])
-
-        encodings['inputs_embeds'] = self.get_bert_outputs(encodings)
-        encodings['input_ids'] = None
-
-        encoder_output = self.vilt_encoder(**encodings)
-        reshape_output = encoder_output.view(self.num_labels, -1, self.encoder_dim).transpose(0, 1).contiguous()
-
-        output_logits = self.clf_layer(reshape_output).squeeze()
-        return output_logits
-
-
-def load_vilt_encoder(loaded_encoder_name, device, pretrained_vilt_name="dandelin/vilt-b32-mlm"):
+    '''
+    Method to load ViltEncoder wrapper, around specified pre-trained vilt 
+    '''
 
     logger.info("-"*100)
-    logger.info("Loading ViLT encoder model: {}".format(loaded_encoder_name))
+    logger.info("Loading ViLT encoder model: {}".format(checkpoint_name))
     vilt_processor = ViltProcessor.from_pretrained(pretrained_vilt_name)
 
-    if loaded_encoder_name == pretrained_vilt_name: # load pretrained encoder
+    if checkpoint_name == pretrained_vilt_name: # load pretrained encoder
         vilt = ViltModel.from_pretrained(pretrained_vilt_name)
         vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
 
@@ -419,14 +382,10 @@ def load_vilt_encoder(loaded_encoder_name, device, pretrained_vilt_name="dandeli
         config = ViltConfig.from_pretrained(pretrained_vilt_name)
         vilt = ViltModel(config) # random init.
         vilt_encoder = ViltEncoderWrapper(vilt_processor, vilt, device)
-        if 'nlvr2' in loaded_encoder_name:
+        if 'nlvr2' in checkpoint_name:
             vilt_encoder.expand_modality_type_embeddings()
 
-        ckpt = torch.load(loaded_encoder_name)
-        del_keys = [k for k in ckpt if "bert" in k]
-        for k in del_keys:
-            ckpt.pop(k, None)
-
+        ckpt = torch.load(checkpoint_name)
         vilt_encoder.load_state_dict(ckpt) # loaded
 
     logger.info("Successfully loaded pretrained ViLT model")
@@ -435,6 +394,9 @@ def load_vilt_encoder(loaded_encoder_name, device, pretrained_vilt_name="dandeli
 
 def convert_batch_to_vilt_input_dict(batch):
 
+    '''
+    Convert inputs from batch_collate into format consumable by the ViltProcessor
+    '''
     return {'images': batch['images'],
             'texts': batch['raw_texts']}
 

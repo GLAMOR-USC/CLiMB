@@ -34,14 +34,14 @@ logging.basicConfig(
 
 class SnliVEDataset(Dataset):
 
-    def __init__(self, data_dir, images_dataset, split, tokenizer, visual_mode='raw'):
+    def __init__(self, data_dir, images_dataset, split, tokenizer, visual_input_type='raw'):
 
         self.data_dir = data_dir
         self.images_dataset = images_dataset
         self.image_dir = os.path.join(data_dir, 'flickr30k_images')
         self.split = split
         self.tokenizer = tokenizer
-        self.visual_mode = visual_mode
+        self.visual_input_type = visual_input_type
 
         self.annotations_file = os.path.join(data_dir, 'snli_ve_{}.jsonl'.format(split))
         self.categories = ['entailment', 'contradiction', 'neutral']
@@ -85,7 +85,7 @@ class SnliVEDataset(Dataset):
 
         # Get the image tensor from ImageDataset
         image_id = example['image_id']
-        image = self.images_dataset.get_image_data(image_id, self.visual_mode)
+        image = self.images_dataset.get_image_data(image_id, self.visual_input_type)
 
         label = example['label']
 
@@ -106,7 +106,7 @@ class SnliVEDataset(Dataset):
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
 
-def snlive_batch_collate(batch, visual_mode):
+def snlive_batch_collate(batch, visual_input_type):
 
     #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
     pad_token = 0   # tokenizer.pad_token_id
@@ -132,11 +132,11 @@ def snlive_batch_collate(batch, visual_mode):
 
     # Stack the image tensors, doing padding if necessary for the sequence of region features
     image_tensors = [x[2] for x in batch]
-    if visual_mode == 'pil-image':
+    if visual_input_type == 'pil-image':
         images = image_tensors                                          # Not actually tensors for this option, list of PIL.Image objects
-    if visual_mode == 'raw':
+    if visual_input_type == 'raw':
         images = torch.stack(image_tensors, dim=0)               # Stacks individual raw image tensors to give (B, 3, W, H) tensor
-    elif visual_mode == 'fast-rcnn':
+    elif visual_input_type == 'fast-rcnn':
         max_len = max([t.shape[0] for t in image_tensors])
         image_tensors_padded = []
         for i in range(len(image_tensors)):
@@ -152,20 +152,20 @@ def snlive_batch_collate(batch, visual_mode):
             'images': images,
             'labels': labels}
 
-def build_snli_ve_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_mode):
+def build_snli_ve_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_input_type):
 
     batch_size = args.batch_size
     shuffle = True if split == 'train' else False
 
     logger.info("Creating SNLI-VE {} dataloader with batch size of {}".format(split, batch_size))
 
-    dataset = SnliVEDataset(data_dir, images_dataset, split, tokenizer, visual_mode)
+    dataset = SnliVEDataset(data_dir, images_dataset, split, tokenizer, visual_input_type)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers=args.num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=lambda x: snlive_batch_collate(x, visual_mode))
+        collate_fn=lambda x: snlive_batch_collate(x, visual_input_type))
 
     return dataloader
 
@@ -176,12 +176,12 @@ if __name__ == '__main__':
             self.batch_size = 4
             self.shuffle = True
             self.num_workers = 2
-            self.visual_mode = 'pil-image'
+            self.visual_input_type = 'pil-image'
     args = Args()
 
     images_dataset = Flickr30KImagesDataset('/data/datasets/MCL/flickr30k/')
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    snli_ve_dataloader = build_snli_ve_dataloader(args, data_dir, images_dataset, 'train', tokenizer, args.visual_mode)
+    snli_ve_dataloader = build_snli_ve_dataloader(args, data_dir, images_dataset, 'train', tokenizer, args.visual_input_type)
 
     for batch in snli_ve_dataloader:
         pdb.set_trace() 

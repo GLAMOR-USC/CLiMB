@@ -18,7 +18,6 @@ sys.path.insert(0, '.')
 import numpy as np
 import torch
 from tqdm import tqdm
-import wandb
 
 from transformers import BertTokenizer
 from transformers.adapters import AdapterConfig
@@ -73,7 +72,7 @@ def main():
                                                                             'freeze_encoder',
                                                                             'freeze_bottom_k_layers'],
                         help="Name of Continual Learning algorithm used.")
-    parser.add_argument("--mcl_data_dir", type=str, required=True, default='/data/datasets/MCL/',
+    parser.add_argument("--climb_data_dir", type=str, required=True, default='/data/datasets/MCL/',
                         help="Directory where all the MCL data is stored")
 
     # Arguments specific to experience replay algorithm
@@ -102,8 +101,6 @@ def main():
 
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
-    parser.add_argument("--wandb_project_name", type=str, default="climb-cl",
-                        help="Name of W&B project where experiments are logged.")
 
     parser.add_argument("--batch_size", type=int, default=32,
                         help="Batch size.")
@@ -140,7 +137,7 @@ def main():
     encoder = load_encoder_method(args.pretrained_model_name, device)
     continual_learner_class = continual_learner_map[args.encoder_name]
     model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
-    args.visual_mode = model_config['visual_mode']
+    args.visual_input_type = model_config['visual_input_type']
 
     # ------------------------------------------ Print some model info ------------------------------------------
     logger.info("Succesfully initialized {}-based Continual Learner".format(model_config['encoder_name']))
@@ -152,14 +149,6 @@ def main():
     logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
     logger.info('Model checkpoints loaded from {}'.format(output_dir))
     logger.info("-"*100)
-
-    # Create W&B experiment
-    logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
-    wandb.init(project=args.wandb_project_name,
-        name=experiment_name,
-        entity='las-cl',
-        reinit=True)
-
 
     results = []
     if os.path.isfile(results_file):
@@ -233,10 +222,10 @@ def main():
                 config_copy = copy.deepcopy(low_shot_config)
                 config_copy.pop('task_trainer', None)
                 task_results = {
-                    'task_num': task_num,
-                    'task_key': task_key,
-                    'task_num': low_shot_task_num,
-                    'task_key': low_shot_task_key,
+                    'upstream_task_num': task_num,
+                    'upstream_task_key': task_key,
+                    'lowshot_task_num': low_shot_task_num,
+                    'lowshot_task_key': low_shot_task_key,
                     'best_low_shot_score': low_shot_eval_score,
                     'low_shot_config': config_copy,
                 }
@@ -244,6 +233,7 @@ def main():
                 json.dump(results, open(results_file, 'w'))
                 logger.info("Saved low-shot transfer results so far!")
                 logger.info("-"*100)
+            logger.info("-"*100)
 
 if __name__ == '__main__':
     main()

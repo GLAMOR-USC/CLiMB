@@ -14,8 +14,8 @@ import pickle as pkl
 from PIL import Image
 import copy
 import pdb
-import wandb
 from tqdm import tqdm
+
 import numpy as np
 import torch
 from torch import nn
@@ -30,21 +30,22 @@ from configs.task_configs import task_configs
 from utils.seed_utils import set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-#os.environ["WANDB_START_METHOD"] = "thread"
-#wandb.init(project='language')
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_language(args, encoder, task_config, model_config, tokenizer, device):
-    upstream_name = args.pretrained_model_name.split('/')[-2]
+
+    # get upstream algo name for logging
+    upstream_name = args.checkpoint_name.split('/')[-2]
     for short in ['adapter', 'ewc', 'replay', 'sequent', 'bottom9']:
-        if short in args.pretrained_model_name:
+        if short in args.checkpoint_name:
             upstream_name += f"_{short}"
             break
     logger.info(f"Upstream Task: {upstream_name}")
 
+    # config
     task_name = task_config['task_name']
     num_labels = task_config['num_labels']
     data_dir = task_config['data_dir']
@@ -54,49 +55,55 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     output_dir = args.output_dir
 
     # load the pre-computed mean image
-    image_fn = "coco_mean_image.png"
+    image_fn = "utils/coco_mean_image.png"
     mean_image = Image.open(image_fn)
 
     # Create model
     batch2inputs_converter = model_config['batch2inputs_converter']
     encoder_dim = model_config['encoder_dim']
-    visual_mode = model_config['visual_mode']
+    visual_input_type = model_config['visual_input_type']
     classifier_class = model_config['classifier_class']
     model = classifier_class(encoder=encoder, 
                              encoder_dim=encoder_dim, 
                              num_labels=num_labels)
 
-    if max_len > 40:
-        img_sz = 128
+    if max_len > 40: # reallocate L-and-V tokens when the dataset have long lang sequences
+        img_sz = 128 # downsample to decrease V tokens
         mean_image = mean_image.resize((img_sz, img_sz))
-        pt_pos_emb = model.vilt_encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
-        model.vilt_encoder.reallocate_text_image(pt_pos_emb, max_len, img_sz)
+        pt_pos_emb = model.encoder.vilt.embeddings.text_embeddings.position_embeddings.weight.clone()
+        model.encoder.reallocate_text_image(pt_pos_emb, max_len, img_sz)
 
     model.to(device)
 
-    # Create dataloaders for training and validation
+    # Create dataloaders for training, validation, and test sets
     train_dataloader = get_data_loader(tokenizer, 
-        task_name=task_name, 
-        split='train', 
-        max_len=max_len, 
-        batch_size=args.batch_size, 
-        data_dir=data_dir,
-        n_shot=n_shot,
-        seed=subsample_seed)
+        task_name = task_name, 
+        split = 'train', 
+        max_len = max_len, 
+        batch_size = args.batch_size, 
+        num_workers = args.num_workers,
+        data_dir = data_dir,
+        n_shot = n_shot,
+        seed = subsample_seed
+    )
 
     val_dataloader = get_data_loader(tokenizer, 
         task_name=task_name, 
-        split='val', 
-        max_len=max_len, 
-        batch_size=256,
-        data_dir=data_dir)
+        split = 'val', 
+        max_len = max_len, 
+        batch_size = 256,
+        num_workers = args.num_workers,
+        data_dir = data_dir
+    )
 
     test_dataloader = get_data_loader(tokenizer, 
-        task_name=task_name, 
-        split='test', 
-        max_len=max_len, 
-        batch_size=256,
-        data_dir=data_dir)
+        task_name = task_name, 
+        split = 'test', 
+        max_len = max_len, 
+        batch_size = 256,
+        num_workers = args.num_workers,
+        data_dir = data_dir
+    )
 
     # Training hyperparameters
     num_epochs = task_config['num_epochs']
@@ -130,7 +137,6 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
     model.zero_grad()
     model.train()
     for epoch in range(1, num_epochs+1):
-        # Training loop for epoch
         for step, batch in enumerate(tqdm(train_dataloader, desc='Training epoch {}'.format(epoch))):
             target = batch[-1].to(device)
             inputs = batch2inputs_converter(batch, mean_image)
@@ -157,12 +163,13 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
                 best_epoch = epoch
                 best_model = copy.deepcopy(model)
 
-    # eval the best model on the test set & write the results
+    # eval the best model (selected by val) on the test set & write the results
     test_score = eval(args, best_model, mean_image, test_dataloader, device, batch2inputs_converter)
     write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir)
 
 
 def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir):
+
     tree = lambda: defaultdict(tree)
     all_scores = tree()
     out_fn = os.path.join(output_dir, f'{task_name}_{upstream_name}_results.json')
@@ -206,16 +213,16 @@ def main():
     ## Required parameters
     parser.add_argument("--task_name", default=None, type=str, required=True,
                         help="The name of the language-only task.")
-    parser.add_argument("--encoder_name", default=None, type=str, required=True, choices=['vilt'],
+    parser.add_argument("--encoder_name", default=None, type=str, required=True,
                         help="The name of the base pretrained encoder.")
     parser.add_argument("--model_catog", default='vilt-vl', type=str,
                         help="The catogory for model class.")
-    parser.add_argument("--pretrained_model_name", default=None, type=str, required=True,
-                        help="Name of pretrained model weights to load.")
+    parser.add_argument("--checkpoint_name", default=None, type=str, required=True,
+                        help="Name of the checkpoint model load.")
+    parser.add_argument("--pretrained_model_name", default="dandelin/vilt-b32-mlm", type=str,
+                        help="Name of the pretrained model")
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Name of output directory, where all experiment results and checkpoints are saved.")
-    parser.add_argument("--wandb_project_name", type=str, default="vl-cl",
-                        help="Name of W&B project where experiments are logged.")
 
 
     parser.add_argument("--batch_size", type=int, default=32,
@@ -247,15 +254,7 @@ def main():
     # Load the Encoder model
     model_config = model_configs[args.model_catog]
     load_encoder_method = load_encoder_map[args.encoder_name]
-    encoder = load_encoder_method(args.pretrained_model_name, device)
-
-    # Create W&B experiment
-    experiment_name = '{}-{}-{}'.format(args.task_name, args.num_shot, args.subsample_seed)
-    logger.info('W&B project: {}, experiment: {}'.format(args.wandb_project_name, experiment_name))
-    wandb.init(project=args.wandb_project_name,
-        name=experiment_name,
-        entity='tejas1995',
-        reinit=True)
+    encoder = load_encoder_method(args.checkpoint_name, device, args.pretrained_model_name)
 
     results = []
     logger.info("-"*100)
