@@ -21,10 +21,13 @@ from utils.image_utils import resize_image
 
 class MSCOCOImagesDataset(Dataset):
 
-    def __init__(self, coco_dir, image_size=(384,640)):
+    def __init__(self, coco_dir, feats_type, image_size=(384,640)):
 
         self.images_dir = os.path.join(coco_dir, 'images')          # Images across all 2017 splits stored in same directory
         self.image_size = image_size
+
+        self.feats_type = feats_type
+        assert feats_type in ['pil-image', 'raw', 'fast-rcnn']
 
         image_filenames = os.listdir(self.images_dir)
         self.imageid2filename = {}
@@ -42,15 +45,13 @@ class MSCOCOImagesDataset(Dataset):
         #self.pil_transform = T.Resize(image_size)
         self.pil_transform = T.Resize(size=384, max_size=640)
 
-    def get_image_data(self, image_id, feats_type):
+    def get_image_data(self, image_id):
 
-        assert feats_type in ['pil-image', 'raw', 'fast-rcnn']
-
-        if feats_type == 'pil-image':
+        if self.feats_type == 'pil-image':
             return self.get_pil_image(image_id)
-        if feats_type == 'raw':
+        if self.feats_type == 'raw':
             return self.get_raw_image_tensor(image_id)
-        elif feats_type == 'fast-rcnn':
+        elif self.feats_type == 'fast-rcnn':
             raise NotImplementedError("Have not implemented Fast-RCNN feature inputs for MS-COCO images!")
 
     def get_pil_image(self, image_id):

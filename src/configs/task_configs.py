@@ -1,9 +1,7 @@
-from train.train_vqa import VQATrainer, LowShotVQATrainer
-from train.train_nlvr2 import NLVR2Trainer, LowShotNLVR2Trainer
-from train.train_snli_ve import SNLIVETrainer, LowShotSNLIVETrainer
-from train.train_vcr import VCRTrainer, LowShotVCRTrainer
-
-from train.train_mscoco_detection import train_mscoco_detection
+from train.visionlanguage_tasks.train_vqa import VQATrainer, LowShotVQATrainer
+from train.visionlanguage_tasks.train_nlvr2 import NLVR2Trainer, LowShotNLVR2Trainer
+from train.visionlanguage_tasks.train_snli_ve import SNLIVETrainer, LowShotSNLIVETrainer
+from train.visionlanguage_tasks.train_vcr import VCRTrainer, LowShotVCRTrainer
 
 SUPPORTED_VL_TASKS = ['vqa', 'nlvr2', 'snli-ve', 'vcr']
 

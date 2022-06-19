@@ -126,7 +126,7 @@ class VQADataset(Dataset):
 
         # Get the image tensor from ImageDataset
         image_id = example['image_id']
-        image = self.images_dataset.get_image_data(image_id, self.visual_mode)
+        image = self.images_dataset.get_image_data(image_id)
 
         labels = example['labels']
         scores = example['scores']

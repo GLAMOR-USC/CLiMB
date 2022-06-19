@@ -23,7 +23,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
-from data.visionlanguage_datasets.vcr_dataset import build_vcr_dataloader
+from data.visionlanguage_datasets.vqa_dataset import build_vqa_dataloader
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -31,8 +31,7 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-
-class VCRTrainer:
+class VQATrainer:
 
     def __init__(self, args, task_configs, model_config, tokenizer, device):
 
@@ -40,61 +39,72 @@ class VCRTrainer:
         self.tokenizer = tokenizer
         self.device = device
 
-        self.vcr_config = task_configs['vcr']
-        self.data_dir = os.path.join(args.mcl_data_dir, self.vcr_config['data_dir'])
-        self.task_type = self.vcr_config['task_type']
+        self.vqa_config = task_configs['vqa']
+        self.data_dir = os.path.join(args.mcl_data_dir, self.vqa_config['data_dir'])
 
         # Model-specific stuff
         self.visual_mode = model_config['visual_mode']
         self.batch2inputs_converter = model_config['batch2inputs_converter']
 
+        # Load COCO Images dataset for image data backbone
+        images_source = self.vqa_config['images_source']
+        mscoco_config = task_configs[images_source]
+        self.images_dataset = MSCOCOImagesDataset(coco_dir=os.path.join(args.mcl_data_dir, mscoco_config['data_dir']),
+                                                  feats_type=args.visual_mode)
+
         # Create dataloaders for training and validation
-        self.vcr_train_dataloader = build_vcr_dataloader(args=args,
-                                                data_dir=self.data_dir,
-                                                split='train',
-                                                tokenizer=tokenizer,
-                                                task_type=self.task_type,
-                                                visual_mode=self.visual_mode)
-    
-        self.vcr_val_dataloader = build_vcr_dataloader(args=args,
-                                                data_dir=self.data_dir,
-                                                split='val',
-                                                tokenizer=tokenizer,
-                                                task_type=self.task_type,
-                                                visual_mode=self.visual_mode)
+        self.vqa_train_dataloader = build_vqa_dataloader(args=args,
+                                                    data_dir=self.data_dir,
+                                                    images_dataset=self.images_dataset,
+                                                    split='train',
+                                                    tokenizer=tokenizer,
+                                                    visual_mode=self.visual_mode)
+
+        self.vqa_val_dataloader = build_vqa_dataloader(args=args,
+                                                  data_dir=self.data_dir,
+                                                  images_dataset=self.images_dataset,
+                                                  split='val',
+                                                  tokenizer=tokenizer,
+                                                  visual_mode=self.visual_mode)
 
         # Training hyperparameters
-        self.num_epochs = self.vcr_config['num_epochs']
-        self.lr = self.vcr_config['lr']
-        self.adam_epsilon = self.vcr_config['adam_epsilon']
-        self.weight_decay = self.vcr_config['weight_decay']
-        self.loss_criterion = nn.CrossEntropyLoss()
-        self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
+        self.num_epochs = self.vqa_config['num_epochs']
+        self.lr = self.vqa_config['lr']
+        self.adam_epsilon = self.vqa_config['adam_epsilon']
+        self.weight_decay = self.vqa_config['weight_decay']
+        self.loss_criterion = nn.BCEWithLogitsLoss(reduction='mean')
+        self.max_steps = len(self.vqa_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
 
+    def compute_score_with_logits(self, logits, labels):
+        logits = torch.max(logits, 1)[1].data # argmax
+        one_hots = torch.zeros(*labels.size()).to(self.device)
+        one_hots.scatter_(1, logits.view(-1, 1), 1)
+        scores = (one_hots * labels)
+        return scores
+    
     def get_train_dataloader(self):
-        return self.vcr_train_dataloader
+        return self.vqa_train_dataloader
 
     def get_collate_fn(self):
-        return self.vcr_train_dataloader.collate_fn
+        return self.vqa_train_dataloader.collate_fn
 
     def forward_pass(self, model, batch, do_eval=False):
 
         inputs = self.batch2inputs_converter(batch)
         if do_eval is True:
             with torch.no_grad():
-                output = model(task_key='vcr', **inputs)
+                output = model(task_key='vqa', **inputs)
         else:
-            output = model(task_key='vcr', **inputs)
+            output = model(task_key='vqa', **inputs)
         return output
-
 
     def train_step(self, model, batch, optimizer=None, scheduler=None, ewc=None):
 
         output = self.forward_pass(model, batch)
         logits = output[1]
-        target = batch['labels'].to(self.device)
-        loss = self.loss_criterion(logits, target)
+        target = batch['target_scores'].to(self.device)
+        loss = self.loss_criterion(logits, target) * target.shape[1]
 
         if ewc is not None and ewc.do_ewc() is True:
             ewc_task, ewc_loss = ewc.compute_ewc_loss(model)
@@ -127,7 +137,7 @@ class VCRTrainer:
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("vcr")
+            model.set_active_adapters("vqa")
         elif self.args.cl_algorithm == 'experience_replay':
             assert replay_memory is not None
             do_replay = replay_memory.do_replay()
@@ -158,7 +168,7 @@ class VCRTrainer:
             # Training loop for epoch
 
             model.train()
-            for step, batch in enumerate(tqdm(self.vcr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+            for step, batch in enumerate(tqdm(self.vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
 
                 loss, output, ewc_task, ewc_loss = self.train_step(model, batch, optimizer, scheduler, ewc)
 
@@ -168,7 +178,7 @@ class VCRTrainer:
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
                 if (step + 1) % 100 == 0:
-                    log_dict = {'vcr': {'loss': loss.item()}}
+                    log_dict = {'vqa': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
                     wandb.log(log_dict)
@@ -176,7 +186,7 @@ class VCRTrainer:
             # Do evaluation after epoch
             eval_score = self.eval(model)
             logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-            wandb.log({'vcr': {'val_score': eval_score}})
+            wandb.log({'vqa': {'val_score': eval_score}})
             if eval_score > best_score:
                 logger.info("New best evaluation score: {:.2f}".format(eval_score))
                 best_score = eval_score
@@ -190,14 +200,15 @@ class VCRTrainer:
         model.eval()
         eval_score = 0
 
-        for step, batch in enumerate(tqdm(self.vcr_val_dataloader, desc='Evaluating on VCR val set')):
+        for step, batch in enumerate(tqdm(self.vqa_val_dataloader, desc='Evaluating on VQA val set')):
             output = self.forward_pass(model, batch, do_eval=True)
-
             logits = output[1]
-            batch_scores = (logits.argmax(-1).cpu() == batch['labels'])
+            target = batch['target_scores'].to(self.device)
+            answer_scores = self.compute_score_with_logits(logits, target)
+            batch_scores = torch.sum(answer_scores, 1)
             eval_score += batch_scores.sum().item()
 
-        eval_score = eval_score/len(self.vcr_val_dataloader.dataset)*100.0
+        eval_score = eval_score/len(self.vqa_val_dataloader.dataset)*100.0
 
         model.train()
         return eval_score
@@ -206,7 +217,7 @@ class VCRTrainer:
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("vcr")
+            model.set_active_adapters("vqa")
 
         # Load model with encoder weights from encoder_path, and classifier weights from model_path
         model.load_state_dict(torch.load(model_path))
@@ -214,7 +225,7 @@ class VCRTrainer:
 
         return self.eval(model)
 
-class LowShotVCRTrainer(VCRTrainer):
+class LowShotVQATrainer(VQATrainer):
 
     def __init__(self, args, task_configs, model_config, tokenizer, device, low_shot_config=None):
 
@@ -222,8 +233,8 @@ class LowShotVCRTrainer(VCRTrainer):
         self.low_shot_config = low_shot_config
         self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
 
-        self.vcr_train_dataloader.dataset.convert_to_low_shot(low_shot_percentage=low_shot_config['percentage'])
-        self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
+        self.vqa_train_dataloader.dataset.convert_to_low_shot(low_shot_percentage=low_shot_config['percentage'])
+        self.max_steps = len(self.vqa_train_dataloader) * self.num_epochs
 
     def train(self, model,):
 
@@ -252,7 +263,7 @@ class LowShotVCRTrainer(VCRTrainer):
             # Training loop for epoch
 
             model.train()
-            for step, batch in enumerate(tqdm(self.vcr_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
+            for step, batch in enumerate(tqdm(self.vqa_train_dataloader, desc='Training epoch {}'.format(epoch+1))):
 
                 loss, output, _, _ = self.train_step(model, batch, optimizer, scheduler)
 
@@ -260,11 +271,10 @@ class LowShotVCRTrainer(VCRTrainer):
                 # Do evaluation after epoch
                 eval_score = self.eval(model)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb.log({'vcr': {'val_score': eval_score}})
+                wandb.log({'vqa': {'val_score': eval_score}})
                 if eval_score > best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score
                     best_model['epoch'] = epoch
                     best_model['model'] = copy.deepcopy(model)
-
         return best_score, best_model
