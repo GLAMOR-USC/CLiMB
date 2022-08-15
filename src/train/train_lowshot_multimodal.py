@@ -19,13 +19,12 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from transformers import BertTokenizer
 from transformers.adapters import AdapterConfig
 
-from modeling import load_encoder_map, continual_learner_map
+from modeling import load_encoder_map, create_continual_learner_map
 
 from cl_algorithms import ExperienceReplayMemory, EWC
-from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
+from cl_evaluation.evaluate_cl_algorithm import upstream_knowledge_transfer_eval, catastrophic_forgetting_eval
 from configs.model_configs import model_configs, ALLOWED_CL_ENCODERS
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from configs.adapter_configs import ADAPTER_MAP
@@ -33,12 +32,11 @@ from utils.seed_utils import set_seed
 
 logger = logging.getLogger(__name__)
 
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu")
 #device = torch.device("cpu")
 
-def train_low_shot(args, low_shot_model, low_shot_task_key, model_config, tokenizer, device):
+def train_low_shot(args, low_shot_model, low_shot_task_key, model_config, device):
 
     low_shot_task_name = task_configs[low_shot_task_key]['task_name']
     low_shot_config = task_configs[low_shot_task_key]['low_shot_config']
@@ -48,7 +46,7 @@ def train_low_shot(args, low_shot_model, low_shot_task_key, model_config, tokeni
                                                                              low_shot_task_name, 
                                                                              low_shot_config))
     task_trainer_class = low_shot_config['task_trainer']
-    task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device, low_shot_config=low_shot_config)
+    task_trainer = task_trainer_class(args, task_configs, model_config, device, low_shot_config=low_shot_config)
     best_eval_score, best_model = task_trainer.train(low_shot_model)
 
     return best_eval_score, low_shot_config
@@ -131,12 +129,14 @@ def main():
     for task_key in args.ordered_cl_tasks:
         assert task_key in SUPPORTED_VL_TASKS
 
-    # --------------------- Load the correct Encoder model, based on encoder_name argument  ---------------------
+    # --------------------- Load the correct ContinualLeaner model, based on encoder_name argument  ---------------------
     model_config = model_configs[args.encoder_name]
-    load_encoder_method = load_encoder_map[args.encoder_name]
-    encoder = load_encoder_method(args.pretrained_model_name, device)
-    continual_learner_class = continual_learner_map[args.encoder_name]
-    model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
+    create_model_method = create_continual_learner_map[args.encoder_name]
+    model = create_model_method(model_name_or_path=args.pretrained_model_name,
+                                ordered_cl_tasks=args.ordered_cl_tasks, 
+                                model_config=model_config, 
+                                task_configs=task_configs,
+                                device=device)
     args.visual_input_type = model_config['visual_input_type']
 
     # ------------------------------------------ Print some model info ------------------------------------------
@@ -168,7 +168,7 @@ def main():
         # --------------------- Do low-shot training of pre-trained encoder on a single task --------------------- 
         task_key = args.ordered_cl_tasks[0]
         low_shot_model = copy.deepcopy(model)
-        low_shot_eval_score, low_shot_config = train_low_shot(args, low_shot_model, task_key, model_config, tokenizer, device)
+        low_shot_eval_score, low_shot_config = train_low_shot(args, low_shot_model, task_key, model_config, device)
         logger.info("Best {} evaluation score = {:.2f}".format(task_key, low_shot_eval_score))
 
         # --------------------- Save low-shot results ---------------------
@@ -214,7 +214,7 @@ def main():
             for low_shot_task_key in low_shot_tasks:
                 low_shot_task_num = args.ordered_cl_tasks.index(low_shot_task_key)
                 low_shot_model = copy.deepcopy(model)
-                low_shot_eval_score, low_shot_config = train_low_shot(args, low_shot_model, low_shot_task_key, model_config, tokenizer, device)
+                low_shot_eval_score, low_shot_config = train_low_shot(args, low_shot_model, low_shot_task_key, model_config, device)
                 logger.info("Best {} evaluation score = {:.2f}".format(low_shot_task_key, low_shot_eval_score))
 
 

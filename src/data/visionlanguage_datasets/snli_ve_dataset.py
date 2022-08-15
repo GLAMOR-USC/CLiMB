@@ -1,4 +1,3 @@
-
 import sys
 import os
 import time
@@ -12,6 +11,7 @@ from collections import defaultdict
 import pickle as pkl
 import pdb
 import jsonlines
+from typing import List, Dict
 
 import numpy as np
 import torch
@@ -25,6 +25,7 @@ from PIL import Image
 from utils.image_utils import resize_image
 
 from data.image_datasets.flickr30kimages_dataset import Flickr30KImagesDataset
+from data.image_collation import image_collate
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -34,33 +35,54 @@ logging.basicConfig(
 
 class SnliVEDataset(Dataset):
 
-    def __init__(self, data_dir, images_dataset, split, tokenizer, visual_input_type='raw'):
+    def __init__(self, 
+                 data_dir: str, 
+                 images_dataset: Flickr30KImagesDataset, 
+                 split: str, 
+                 **kwargs):
+
+        """
+        Initiates the SnliVEDataset - loads all the questions (and converts to input IDs using the tokenizer, if provided) 
+        and answers (including converting each to a numeric label, and a score based on occurence from annotators)
+        Every item in self.data corresponds to a single VE hypothesis and corresponding image
+
+        Args:
+        data_dir : path containing SNLI-VE hypotheses and annotations.
+        images_dataset : instance of Flickr30KImagesDataset, that is used to retrieve the Flickr30K image for each question
+        split: either train/val split
+
+
+        Returns:
+        Loads all annotations into self.data, where each item is a single SNLI-VE pair
+        """
 
         self.data_dir = data_dir
         self.images_dataset = images_dataset
         self.image_dir = os.path.join(data_dir, 'flickr30k_images')
         self.split = split
-        self.tokenizer = tokenizer
-        self.visual_input_type = visual_input_type
+        self.tokenizer = kwargs['tokenizer'] if 'tokenizer' in kwargs else None
 
         self.annotations_file = os.path.join(data_dir, 'snli_ve_{}.jsonl'.format(split))
         self.categories = ['entailment', 'contradiction', 'neutral']
         self.cat2label = {cat: i for i, cat in enumerate(self.categories)}
         self.num_labels = len(self.categories)
 
-        self.cached_data_file = os.path.join(data_dir, 'cached_vqa_data', 'snli-ve_{}.pkl'.format(split))
+        self.cached_data_file = os.path.join(data_dir, 'cached_ve_data', 'snli-ve_{}.pkl'.format(split))
         if os.path.isfile(self.cached_data_file):
             self.data = pkl.load(open(self.cached_data_file, 'rb'))
         else:
             self.data = []
             json_lines = jsonlines.open(self.annotations_file)
-            for line in json_lines:
+            for line in tqdm(json_lines):
                 image_id = int(line['Flickr30K_ID'])
                 hypothesis = str(line['sentence2'])
                 gold_label = self.cat2label[line['gold_label']]
 
-                tokens = self.tokenizer.tokenize(hypothesis)
-                input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+                if self.tokenizer is not None:
+                    tokens = self.tokenizer.tokenize(hypothesis)
+                    input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+                else:
+                    input_ids = []
 
                 doc = {'image_id': image_id,
                         'hypothesis': hypothesis,
@@ -75,7 +97,15 @@ class SnliVEDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
+
+        """
+        Args:
+        index : index of element in self.data to return as data instance
+
+        Returns:
+        dictionary containing inputs and targets for model to do SNLI-VE
+        """
 
         example = self.data[index]
 
@@ -85,14 +115,22 @@ class SnliVEDataset(Dataset):
 
         # Get the image tensor from ImageDataset
         image_id = example['image_id']
-        image = self.images_dataset.get_image_data(image_id, self.visual_input_type)
+        image = self.images_dataset.get_image_data(image_id)
 
         label = example['label']
 
-        return hypothesis, input_ids, image, label
+        return {'hypothesis': hypothesis, 
+                'input_ids': input_ids, 
+                'image': image, 
+                'label': label
+                }
 
 
-    def convert_to_low_shot(self, num_shots_per_class):
+    def convert_to_low_shot(self, num_shots_per_class: int):
+        """
+        Args:
+        num_shots_per_class: int, denoting number of examples for each output label in low-shot setting
+        """
 
         assert self.split == 'train'
         logger.info("Converting SNLI-VE train split into low-shot dataset, with {} examples per class...".format(num_shots_per_class))
@@ -106,14 +144,25 @@ class SnliVEDataset(Dataset):
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
 
-def snlive_batch_collate(batch, visual_input_type):
+def snlive_batch_collate(batch: List[Dict], 
+                        visual_input_type: str):
 
-    #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
+    """
+    Collates each model input for all batch items into a single model input (e.g. converts a list of input_ids into a matrix of size (batch_size, max_len))
+
+    Args:
+    batch - list of batch items, each item being a dictionary returned by Dataset's __getitem__ method
+    visual_input_type: string which specifies the type of visual input
+
+    Returns:
+    Dictionary containing batched inputs and outputs
+    """
+
     pad_token = 0   # tokenizer.pad_token_id
 
     # Pad the text inputs
-    hypotheses = [x[0] for x in batch]
-    input_ids = [x[1] for x in batch]
+    hypotheses = [x['hypothesis'] for x in batch]
+    input_ids = [x['input_ids'] for x in batch]
     max_len = max([len(x) for x in input_ids])
     input_ids_padded = []
     attn_masks = []
@@ -126,25 +175,14 @@ def snlive_batch_collate(batch, visual_input_type):
     input_ids = torch.tensor(input_ids_padded, dtype=torch.long)
     attn_mask = torch.tensor(attn_masks, dtype=torch.long)
 
+    # Stack the target tensors
     # Create labels tensor
-    labels = [x[3] for x in batch]
+    labels = [x['label'] for x in batch]
     labels = torch.tensor(labels, dtype=torch.long)
 
-    # Stack the image tensors, doing padding if necessary for the sequence of region features
-    image_tensors = [x[2] for x in batch]
-    if visual_input_type == 'pil-image':
-        images = image_tensors                                          # Not actually tensors for this option, list of PIL.Image objects
-    if visual_input_type == 'raw':
-        images = torch.stack(image_tensors, dim=0)               # Stacks individual raw image tensors to give (B, 3, W, H) tensor
-    elif visual_input_type == 'fast-rcnn':
-        max_len = max([t.shape[0] for t in image_tensors])
-        image_tensors_padded = []
-        for i in range(len(image_tensors)):
-            padding_tensor = torch.zeros(max_len-image_tensors[i].shape[0], image_tensors[i].shape[1])
-            padded_tensor = torch.cat((image_tensors[i], padding_tensor), dim=0)
-            assert padded_tensor.shape[0] == max_len
-            image_tensors_padded.append(padded_tensor)
-        images = torch.stack(image_tensors_padded, dim=0)        # Pads region features with 0 vectors to give (B, R, hv) tensor
+    # Depending on the visual_input_type variable, process the images accordingly
+    images = [x['image'] for x in batch]
+    images = image_collate(images, visual_input_type)
 
     return {'raw_texts': hypotheses,
             'input_ids': input_ids,
@@ -152,14 +190,34 @@ def snlive_batch_collate(batch, visual_input_type):
             'images': images,
             'labels': labels}
 
-def build_snli_ve_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_input_type):
+def build_snli_ve_dataloader(args, 
+                             data_dir: str, 
+                             images_dataset: Flickr30KImagesDataset, 
+                             split: str, 
+                             visual_input_type: str,
+                             **kwargs) -> torch.utils.data.DataLoader:
+
+    """
+    Creates the SNLI-VE Dataloader, which gives batches of SNLI-VE inputs and outputs
+
+    Args:
+    args
+    data_dir : path containing SNLI-VE hypotheses and annotations.
+    images_dataset : instance of Flickr30KImagesDataset, that is used to retrieve the Flickr30K image for each question
+    split: either train/val split
+    visual_input_type: format of visual input to model
+
+    Returns:
+    DataLoader object
+    """
+
 
     batch_size = args.batch_size
     shuffle = True if split == 'train' else False
 
     logger.info("Creating SNLI-VE {} dataloader with batch size of {}".format(split, batch_size))
 
-    dataset = SnliVEDataset(data_dir, images_dataset, split, tokenizer, visual_input_type)
+    dataset = SnliVEDataset(data_dir, images_dataset, split, **kwargs)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers=args.num_workers,
@@ -179,9 +237,9 @@ if __name__ == '__main__':
             self.visual_input_type = 'pil-image'
     args = Args()
 
-    images_dataset = Flickr30KImagesDataset('/data/datasets/MCL/flickr30k/')
+    images_dataset = Flickr30KImagesDataset('/data/datasets/MCL/flickr30k/', args.visual_input_type)
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    snli_ve_dataloader = build_snli_ve_dataloader(args, data_dir, images_dataset, 'train', tokenizer, args.visual_input_type)
+    snli_ve_dataloader = build_snli_ve_dataloader(args, data_dir, images_dataset, 'train', args.visual_input_type, tokenizer=tokenizer)
 
     for batch in snli_ve_dataloader:
         pdb.set_trace() 

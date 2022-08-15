@@ -8,6 +8,8 @@ from tqdm import tqdm
 import pickle
 import pdb
 from PIL import Image
+from typing import List, Dict
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -24,14 +26,25 @@ logging.basicConfig(
 
 class NLVR2Dataset(Dataset):
 
-    def __init__(self, data_dir, split, visual_input_type):
-        # TODO
-        if visual_input_type != "pil-image":
-            raise NotImplementedError("Have not implemented other inputs for NLVR2 images!")
+    def __init__(self, 
+                 data_dir: str, 
+                 split: str,
+                 **kwargs):
+
+        """
+        Initiates the NLVR2Dataset - loads all the sentences and corresponding image IDs and output label 
+        Every item in self.data corresponds to a single NLVR2 input
+
+        Args:
+        data_dir : path containing NLVR2 annotations and images
+        split: either train/val/test split
+
+        Returns:
+        Loads all annotations into self.data, where each item is a single NLVR2 input
+        """
 
         self.data_dir = data_dir
         self.num_labels = 2
-        self.visual_input_typel = visual_input_type
         self.split = split
 
         rename_split = {'train': 'train', 'val': 'dev', 'test': 'test1'}
@@ -61,17 +74,6 @@ class NLVR2Dataset(Dataset):
                     ))
                     example["sentence"] = str(annotation["sentence"])
                     example["labels"] = 0 if str(annotation["label"]) == "False" else 1
-                    ''' # debug
-                    try: 
-                        assert os.path.exists(example["image_id_0"]), "img1 not exists" 
-                        assert os.path.exists(example["image_id_1"]), "img2 not exists" 
-                        img1 = self.get_pil_image(example["image_id_0"])
-                        img2 = self.get_pil_image(example["image_id_1"])
-                    except:
-                        logger.info(annotation)
-                        continue
-                    '''
-                    self.data.append(example)
 
             with open(self.cached_data_file, 'wb') as f:
                 pickle.dump(self.data, f)
@@ -90,16 +92,30 @@ class NLVR2Dataset(Dataset):
     def __len__(self):
         return self.n_examples
 
-    #TODO: implement visual_input_type = faster-RCNN 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
+
+        """
+        Args:
+        index : index of element in self.data to return as data instance
+
+        Returns:
+        dictionary containing inputs and targets for model to do NLVR
+        """
+
         example = self.data[index]
         img1 = self.get_pil_image(example["image_id_0"])
         img2 = self.get_pil_image(example["image_id_1"])
-        image_tensor = [img1, img2]
+        image = [img1, img2]
 
-        return example["sentence"], image_tensor, example["labels"]
+        return {'text': example["sentence"], 
+                'image': image, 
+                'label': example["labels"]}
 
-    def convert_to_low_shot(self, num_shots_per_class):
+    def convert_to_low_shot(self, num_shots_per_class: int):
+        """
+        Args:
+        num_shots_per_class: int, denoting number of examples for each output label in low-shot setting
+        """
 
         assert self.split == 'train'
         logger.info("Converting NLVR2 train split into low-shot dataset, with {} examples per class...".format(num_shots_per_class))
@@ -113,18 +129,53 @@ class NLVR2Dataset(Dataset):
 
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
-#TODO: implement visual_input_type = faster-RCNN 
-def nlvr2_batch_collate(batch, visual_input_type):
-    raw_texts, pil_objs, labels = zip(*batch)
-    return {'raw_texts': list(raw_texts), 
+def nlvr2_batch_collate(batch: List[Dict], 
+                        visual_input_type: str):
+
+    """
+    Collates each model input for all batch items into a single model input (e.g. converts a list of input_ids into a matrix of size (batch_size, max_len))
+
+    Args:
+    batch - list of batch items, each item being a dictionary returned by Dataset's __getitem__ method
+    visual_input_type: string which specifies the type of visual input
+
+    Returns:
+    Dictionary containing batched inputs and outputs
+    """
+
+    assert visual_input_type == 'pil-image'
+    texts = [x['text'] for x in batch]
+    pil_objs = [x['image'] for x in batch]
+    labels = [x['label'] for x in batch]
+
+    return {'raw_texts': texts, 
             'images': pil_objs, 
             'labels': torch.LongTensor(labels)}
-    
 
-def build_nlvr2_dataloader(args, data_dir, split, visual_input_type):
-    logger.info("Creating NLVRv2 {} dataloader with batch size of {}".format(split, int(args.batch_size/2)))
+def build_nlvr2_dataloader(args, 
+                           data_dir: str, 
+                           split: str, 
+                           visual_input_type: str,
+                           **kwargs) -> torch.utils.data.DataLoader:
 
-    dataset = NLVR2Dataset(data_dir, split, visual_input_type)
+    """
+    Creates the NLVR2 Dataloader, which gives batches of NLVR2 inputs and outputs
+
+    Args:
+    data_dir : path containing NLVR questions and annotations.
+    split: either train/val split
+    visual_input_type: format of visual input to model
+
+    Returns:
+    DataLoader object
+    """
+
+    logger.info("Creating NLVR2 {} dataloader with batch size of {}".format(split, int(args.batch_size/2)))
+
+    if visual_input_type != "pil-image":
+        raise NotImplementedError("Have not implemented other inputs for NLVR2 images!")
+
+    dataset = NLVR2Dataset(data_dir, split, **kwargs)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers = args.num_workers,
@@ -134,20 +185,25 @@ def build_nlvr2_dataloader(args, data_dir, split, visual_input_type):
         )
     return dataloader
 
+    
 '''
 if __name__ == '__main__':
-    data_dir = '/data/datasets/MCL/nlvr2/'
+
     class Args:
         def __init__(self):
-            self.batch_size = 4 
-            self.num_workers = 0
+            self.batch_size = 4
+            self.num_workers = 2
+            self.visual_input_type = 'pil-image'
+    
     args = Args()
+    data_dir          = '/data/datasets/MCL/nlvr2/'
+    split             = 'val' #'train' 
+    
+    from transformers import BertTokenizer
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
-    nlvr2_dataloader = build_nlvr2_dataloader(args, data_dir, 'train', 'pil-image')
+    nlvr_dataloader = build_nlvr2_dataloader(args, data_dir,'val', args.visual_input_type, tokenizer=tokenizer)
 
-    for batch in tqdm(nlvr2_dataloader):
-        print(batch['raw_texts'])
-        print(batch['images'])
-        print(batch['labels'])
+    for batch in nlvr_dataloader:
         pdb.set_trace() 
 '''

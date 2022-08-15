@@ -12,6 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
+from typing import List, Dict
 
 import numpy as np
 import torch
@@ -20,6 +21,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.visionlanguage_datasets.nlvr2_dataset import build_nlvr2_dataloader
+from train.visionlanguage_tasks.task_trainer import TaskTrainer
 from utils.wandb import wandb_logger
 
 sys.path.insert(0, '.')
@@ -31,12 +33,25 @@ logging.basicConfig(
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
 
-class NLVR2Trainer:
+class NLVR2Trainer(TaskTrainer):
 
-    def __init__(self, args, task_configs, model_config, tokenizer, device):
+    def __init__(self, 
+                 args: argparse.Namespace, 
+                 task_configs: Dict, 
+                 model_config: Dict, 
+                 device: torch.device):
+        '''
+        Initializes a Trainer that handles training of a model on the NLVR2 task
+
+        args: Arguments provided by user
+        task_configs: dictionary containing task-specific configuration parameters for all tasks
+        model_config: dictionary containing model-specific configuration parameters
+        device: cuda/cpu
+        '''
+
+        super().__init__()
 
         self.args = args
-        self.tokenizer = tokenizer
         self.device = device
 
         self.nlvr_config = task_configs['nlvr2']
@@ -72,7 +87,11 @@ class NLVR2Trainer:
     def get_collate_fn(self):
         return self.nlvr_train_dataloader.collate_fn
 
-    def forward_pass(self, model, batch, do_eval=False):
+    def forward_pass(self, model, batch: Dict, do_eval: bool = False) -> tuple:
+        '''
+        Forward pass of batch inputs through model
+        output: tuple containing (encoder_pooled_output, output_logits)
+        '''
 
         inputs = self.batch2inputs_converter(batch)
         if do_eval is True:
@@ -83,7 +102,24 @@ class NLVR2Trainer:
         return output
 
 
-    def train_step(self, model, batch, optimizer=None, scheduler=None, ewc=None):
+    def train_step(self, model, batch: Dict, optimizer=None, scheduler=None, ewc=None):
+
+        '''
+        A single training step, including forward pass and backpropagation of loss
+
+        Args:
+        model
+        batch: Dictionary containing model inputs
+        optimizer
+        scheduler
+        ewc: Instance of EWC class for computing EWC loss
+
+        Returns:
+        loss
+        output: output tuple from forward_pass
+        ewc_task: string indicating which previous task's weights to compare against
+        ewc_loss
+        '''
 
         output = self.forward_pass(model, batch)
         logits = output[1]
@@ -117,7 +153,18 @@ class NLVR2Trainer:
         optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
         return optimizer
 
-    def train(self, model, replay_memory=None, ewc=None):
+    def train(self, model, replay_memory=None, ewc=None) -> (float, Dict):
+        '''
+        Trains model on NLVR2 task
+        Args:
+        model
+        replay_memory: If experience replay is to be performed
+        ewc: If EWC regularization loss is to be added
+
+        Returns:
+        best_score: Best validation NLVR2 score
+        best_model: Model checkpoint of best validation epoch
+        '''
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
@@ -180,7 +227,12 @@ class NLVR2Trainer:
 
         return best_score, best_model
 
-    def eval(self, model):
+    def eval(self, model) -> float:
+
+        '''
+        Evaluates model on NLVR2 validation set
+        Returns validation NLVR2 accuracy
+        '''
 
         model.eval()
         eval_score = 0
@@ -196,7 +248,13 @@ class NLVR2Trainer:
         model.train()
         return eval_score
 
-    def eval_forgetting(self, model, model_path):
+    def eval_forgetting(self, model, model_path: str) -> float:
+
+        '''
+        Evaluates forgetting by loading model weights from model_path, 
+        which has encoder weights of later task and classifier weights from NLVR2
+        Returns NLVR2 evaluation accuracy of post-NLVR model checkpoint
+        '''
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
@@ -210,16 +268,40 @@ class NLVR2Trainer:
 
 class LowShotNLVR2Trainer(NLVR2Trainer):
 
-    def __init__(self, args, task_configs, model_config, tokenizer, device, low_shot_config):
+    def __init__(self,
+                 args: argparse.Namespace, 
+                 task_configs: Dict, 
+                 model_config: Dict, 
+                 device: torch.device, 
+                 low_shot_config: Dict = None):
 
-        super(LowShotNLVR2Trainer, self).__init__(args, task_configs, model_config, tokenizer, device)
+        '''
+        Creates instance of low-shot NLVR2 trainer according to low_shot_config
+        
+        args: Arguments provided by user
+        task_configs: dictionary containing task-specific configuration parameters for all tasks
+        model_config: dictionary containing model-specific configuration parameters
+        device: cuda/cpu
+        low_shot_config: dictionary containing low-shot configuration parameters
+        '''
+
+        super(LowShotNLVR2Trainer, self).__init__(args, task_configs, model_config, device)
         self.low_shot_config = low_shot_config
         self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
 
         self.nlvr_train_dataloader.dataset.convert_to_low_shot(num_shots_per_class=low_shot_config['num_shots_per_class'])
         self.max_steps = len(self.nlvr_train_dataloader) * self.num_epochs
 
-    def train(self, model):
+    def train(self, model) -> (float, Dict):
+        '''
+        Trains model on NLVR2 task
+        Args:
+        model
+
+        Returns:
+        best_score: Best validation NLVR2 score
+        best_model: Model checkpoint of best validation epoch
+        '''
 
         model.to(self.device)
 

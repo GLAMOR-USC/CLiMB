@@ -6,6 +6,6 @@ python -m train.train_upstream_continual_learning --encoder_name vilt \
                         --cl_algorithm singletask_ft \
                         --climb_data_dir /data/datasets/MCL/ \
             		--do_train \
-                        --output_dir /data/experiments/MCL/ \
+                        --output_dir /data/experiments/MCL/temp/ \
                         --do_wandb_logging \
                         --batch_size 64

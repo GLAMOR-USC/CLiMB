@@ -19,13 +19,12 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from transformers import BertTokenizer
 from transformers.adapters import AdapterConfig
 
-from modeling import load_encoder_map, continual_learner_map
+from modeling import load_encoder_map, create_continual_learner_map
 
 from cl_algorithms import ExperienceReplayMemory, EWC
-from cl_evaluation.evaluate_cl_algorithm import forward_transfer_eval, catastrophic_forgetting_eval
+from cl_evaluation.evaluate_cl_algorithm import upstream_knowledge_transfer_eval, catastrophic_forgetting_eval
 
 from configs.model_configs import model_configs, ALLOWED_CL_ENCODERS
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
@@ -37,7 +36,6 @@ from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
 
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu")
 
@@ -142,12 +140,14 @@ def main():
     for task_key in args.ordered_cl_tasks:
         assert task_key in SUPPORTED_VL_TASKS
 
-    # --------------------- Load the correct Encoder model, based on encoder_name argument  ---------------------
+    # --------------------- Load the ContinualLearner model, based on encoder_name argument  ---------------------
     model_config = model_configs[args.encoder_name]
-    load_encoder_method = load_encoder_map[args.encoder_name]
-    encoder = load_encoder_method(args.pretrained_model_name, device)
-    continual_learner_class = continual_learner_map[args.encoder_name]
-    model = continual_learner_class(args.ordered_cl_tasks, encoder, model_config['encoder_dim'], task_configs)
+    create_model_method = create_continual_learner_map[args.encoder_name]
+    model = create_model_method(model_name_or_path=args.pretrained_model_name,
+                                ordered_cl_tasks=args.ordered_cl_tasks, 
+                                model_config=model_config, 
+                                task_configs=task_configs,
+                                device=device)
     args.visual_input_type = model_config['visual_input_type']
 
 
@@ -214,6 +214,7 @@ def main():
                 logger.info("Task #{}: {} - best score = {:.2f}".format(i+1, task_configs[task_key]['task_name'], best_score))
         task_trainers = {}
 
+        # Begin training on VL tasks sequentially
         logger.info("-"*100)
         logger.info("Training models on Vision-Language continual learning tasks...")
         for task_num, task_key in enumerate(args.ordered_cl_tasks):
@@ -240,7 +241,7 @@ def main():
                 logger.info("Loaded model checkpoint from task {}! Moving on to next task...".format(task_name))
 
                 task_trainer_class = task_configs[task_key]['task_trainer']
-                task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
+                task_trainer = task_trainer_class(args, task_configs, model_config, device)
 
             else:
 
@@ -255,7 +256,7 @@ def main():
                 # Create the Trainer method for the current CL task, and call the train method
                 logger.info("Training {} model on task #{}: {}".format(args.encoder_name, task_num+1, task_name))
                 task_trainer_class = task_configs[task_key]['task_trainer']
-                task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
+                task_trainer = task_trainer_class(args, task_configs, model_config, device)
                 best_eval_score, best_model = task_trainer.train(model,
                                                                 replay_memory=replay_memory,
                                                                 ewc=ewc)
@@ -303,8 +304,8 @@ def main():
 
         # Forward transfer from continual learning, by comparing to single-task finetuning score
         logger.info("Evaluating FORWARD TRANSFER of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
-        forward_transfer_dict = forward_transfer_eval(args, results_file)
-        average_relative_gain = sum(list(forward_transfer_dict.values()))/len(forward_transfer_dict)
+        upstream_knowledge_dict = upstream_knowledge_transfer_eval(args, results_file)
+        average_relative_gain = sum(list([x['relative_gain'] for x in upstream_knowledge_dict.values()]))/len(upstream_knowledge_dict)
         logger.info("Average forward transfer gain = {:.2f}%".format(average_relative_gain))
 
         logger.info("-"*100)
@@ -315,18 +316,21 @@ def main():
             task_trainers = {}
             for task_num, task_key in enumerate(args.ordered_cl_tasks):
                 task_trainer_class = task_configs[task_key]['task_trainer']
-                task_trainer = task_trainer_class(args, task_configs, model_config, tokenizer, device)
+                task_trainer = task_trainer_class(args, task_configs, model_config, device)
                 task_trainers[task_key] = task_trainer
         else:
             for task_num, task_key in enumerate(args.ordered_cl_tasks):
                 assert task_key in task_trainers.keys()
 
         # Run the forgetting evaluation, and save results to file
-        forgetting_results_file = os.path.join(output_dir, 'forgetting_results.json')
         logger.info("Evaluating CATASTROPHIC FORGETTING of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
         catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, task_trainers)
-        json.dump(catastrophic_forgetting_dict, open(forgetting_results_file, 'w'))
-        
+
+        eval_results_file = os.path.join(output_dir, 'eval_results.json')
+        eval_results = {'upstream_knowledge_transfer': upstream_knowledge_dict,
+                        'forgetting': catastrophic_forgetting_dict}
+        json.dump(eval_results, open(eval_results_file, 'w'))
+
         logger.info("-"*100)
 
 if __name__ == '__main__':

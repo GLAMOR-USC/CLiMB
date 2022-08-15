@@ -12,6 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
+from typing import List, Dict
 
 sys.path.insert(0, '.')
 
@@ -22,6 +23,7 @@ from torch.optim import AdamW
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 from data.visionlanguage_datasets.vcr_dataset import build_vcr_dataloader
+from train.visionlanguage_tasks.task_trainer import TaskTrainer
 from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
@@ -31,12 +33,25 @@ logging.basicConfig(
         level=logging.INFO)
 
 
-class VCRTrainer:
+class VCRTrainer(TaskTrainer):
 
-    def __init__(self, args, task_configs, model_config, tokenizer, device):
+    def __init__(self, 
+                 args: argparse.Namespace, 
+                 task_configs: Dict, 
+                 model_config: Dict, 
+                 device: torch.device):
+        '''
+        Initializes a Trainer that handles training of a model on the VCR task
+
+        args: Arguments provided by user
+        task_configs: dictionary containing task-specific configuration parameters for all tasks
+        model_config: dictionary containing model-specific configuration parameters
+        device: cuda/cpu
+        '''
+
+        super().__init__()
 
         self.args = args
-        self.tokenizer = tokenizer
         self.device = device
 
         self.vcr_config = task_configs['vcr']
@@ -51,14 +66,12 @@ class VCRTrainer:
         self.vcr_train_dataloader = build_vcr_dataloader(args=args,
                                                 data_dir=self.data_dir,
                                                 split='train',
-                                                tokenizer=tokenizer,
                                                 task_type=self.task_type,
                                                 visual_input_type=self.visual_input_type)
     
         self.vcr_val_dataloader = build_vcr_dataloader(args=args,
                                                 data_dir=self.data_dir,
                                                 split='val',
-                                                tokenizer=tokenizer,
                                                 task_type=self.task_type,
                                                 visual_input_type=self.visual_input_type)
 
@@ -77,7 +90,11 @@ class VCRTrainer:
     def get_collate_fn(self):
         return self.vcr_train_dataloader.collate_fn
 
-    def forward_pass(self, model, batch, do_eval=False):
+    def forward_pass(self, model, batch: Dict, do_eval: bool = False) -> tuple:
+        '''
+        Forward pass of batch inputs through model
+        output: tuple containing (encoder_pooled_output, output_logits)
+        '''
 
         inputs = self.batch2inputs_converter(batch)
         if do_eval is True:
@@ -88,7 +105,24 @@ class VCRTrainer:
         return output
 
 
-    def train_step(self, model, batch, optimizer=None, scheduler=None, ewc=None):
+    def train_step(self, model, batch: Dict, optimizer=None, scheduler=None, ewc=None):
+
+        '''
+        A single training step, including forward pass and backpropagation of loss
+
+        Args:
+        model
+        batch: Dictionary containing model inputs
+        optimizer
+        scheduler
+        ewc: Instance of EWC class for computing EWC loss
+
+        Returns:
+        loss
+        output: output tuple from forward_pass
+        ewc_task: string indicating which previous task's weights to compare against
+        ewc_loss
+        ''' 
 
         output = self.forward_pass(model, batch)
         logits = output[1]
@@ -122,7 +156,18 @@ class VCRTrainer:
         optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
         return optimizer
 
-    def train(self, model, replay_memory=None, ewc=None):
+    def train(self, model, replay_memory=None, ewc=None) -> (float, Dict):
+        '''
+        Trains model on VCR task
+        Args:
+        model
+        replay_memory: If experience replay is to be performed
+        ewc: If EWC regularization loss is to be added
+
+        Returns:
+        best_score: Best validation VCR score
+        best_model: Model checkpoint of best validation epoch
+        '''
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
@@ -184,7 +229,12 @@ class VCRTrainer:
 
         return best_score, best_model
 
-    def eval(self, model):
+    def eval(self, model) -> float:
+
+        '''
+        Evaluates model on VCR validation set
+        Returns validation VCR accuracy
+        '''
 
         model.eval()
         eval_score = 0
@@ -201,7 +251,13 @@ class VCRTrainer:
         model.train()
         return eval_score
 
-    def eval_forgetting(self, model, model_path):
+    def eval_forgetting(self, model, model_path: str) -> float:
+
+        '''
+        Evaluates forgetting by loading model weights from model_path, 
+        which has encoder weights of later task and classifier weights from VCR
+        Returns VCR evaluation accuracy of post-VCR model checkpoint
+        '''
 
         model.to(self.device)
         if self.args.cl_algorithm == 'adapter':
@@ -215,7 +271,22 @@ class VCRTrainer:
 
 class LowShotVCRTrainer(VCRTrainer):
 
-    def __init__(self, args, task_configs, model_config, tokenizer, device, low_shot_config=None):
+    def __init__(self,
+                 args: argparse.Namespace, 
+                 task_configs: Dict, 
+                 model_config: Dict, 
+                 device: torch.device, 
+                 low_shot_config: Dict = None):
+
+        '''
+        Creates instance of low-shot VCR trainer according to low_shot_config
+        
+        args: Arguments provided by user
+        task_configs: dictionary containing task-specific configuration parameters for all tasks
+        model_config: dictionary containing model-specific configuration parameters
+        device: cuda/cpu
+        low_shot_config: dictionary containing low-shot configuration parameters
+        '''
 
         super(LowShotVCRTrainer, self).__init__(args, task_configs, model_config, tokenizer, device)
         self.low_shot_config = low_shot_config
@@ -224,7 +295,16 @@ class LowShotVCRTrainer(VCRTrainer):
         self.vcr_train_dataloader.dataset.convert_to_low_shot(low_shot_percentage=low_shot_config['percentage'])
         self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
 
-    def train(self, model,):
+    def train(self, model) -> (float, Dict):
+        '''
+        Trains model on VCR task
+        Args:
+        model
+
+        Returns:
+        best_score: Best validation VCR score
+        best_model: Model checkpoint of best validation epoch
+        '''
 
         model.to(self.device)
 

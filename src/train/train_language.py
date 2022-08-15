@@ -36,6 +36,16 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_language(args, encoder, task_config, model_config, tokenizer, device):
+    '''
+    Train the encoder on the language-only downstream tasks
+
+    args: Arguments provided by user
+    encoder: trained encoder on upstream tasks
+    task_config: dictionary containing task-specific configuration parameters for the current task
+    model_config: dictionary containing model-specific configuration parameters
+    tokenizer: tokenzier of the backbone encoder
+    device: cuda/cpu
+    '''
 
     # get upstream algo name for logging
     upstream_name = args.checkpoint_name.split('/')[-2]
@@ -169,6 +179,9 @@ def train_language(args, encoder, task_config, model_config, tokenizer, device):
 
 
 def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir):
+    '''
+    Write the results to the .json file in output_dir
+    '''
 
     tree = lambda: defaultdict(tree)
     all_scores = tree()
@@ -186,6 +199,15 @@ def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, ta
 
 
 def eval(args, model, mean_image, eval_dataloader, device, batch2inputs_converter):
+    '''
+    Evaluation on the dev set and test set
+
+    model: the trained model
+    mean_image: the vacuous visual input for language-only tasks
+    eval_dataloader: dataloader for evaluation
+    device: cuda/cpu
+    batch2inputs_converter: a model-specific fuction that converts inputs to the format the model takes
+    '''
 
     model.eval()
     eval_score = 0

@@ -12,6 +12,7 @@ import pickle as pkl
 import copy
 import yaml
 from collections import defaultdict
+from typing import List, Dict
 
 sys.path.insert(0, '.')
 
@@ -27,13 +28,23 @@ from utils.seed_utils import set_seed
 
 logger = logging.getLogger(__name__)
 
-def forward_transfer_eval(args, results_file):
+def upstream_knowledge_transfer_eval(args: argparse.Namespace, results_file: str) -> Dict:
+    '''
+    Computes upstream knowledge transfer for CL tasks
+
+    Arguments:
+    args
+    results_file: JSON file containing model performances on each task in CL setting
+
+    Returns:
+    upstream_knowledge_transfer_dict: Dictionary containing relative gain for each CL task
+    '''
 
     cl_results = json.load(open(results_file))
     assert len(cl_results) == len(args.ordered_cl_tasks)
 
     logger.info("-"*100)
-    forward_transfer_dict = {}
+    upstream_knowledge_transfer_dict = {}
     for task_num, task_results in enumerate(cl_results):
         # Get result for this CL task
         task_key = task_results['task_key']
@@ -53,12 +64,26 @@ def forward_transfer_eval(args, results_file):
         relative_gain = 100.0*(cl_task_score - singletask_score)/(singletask_score - random_score)
         logger.info("Absolute performance on task #{}, {} = {:.2f}%".format(task_num, task_name, cl_task_score))
         logger.info("Relative Gain for task #{}, {} = {:.2f}%".format(task_num, task_name, relative_gain))
-        forward_transfer_dict[task_key] = relative_gain
+        upstream_knowledge_transfer_dict[task_key] = {'relative_gain': relative_gain,
+                                                      'cl_task_score': cl_task_score,
+                                                      'singletask_score': singletask_score}
 
-    return forward_transfer_dict
+    return upstream_knowledge_transfer_dict
 
 
-def catastrophic_forgetting_eval(args, results_file, model, task_trainers):
+def catastrophic_forgetting_eval(args: argparse.Namespace, results_file: str, model, task_trainers: List) -> Dict:
+    '''
+    For model checkpoint after each CL task, compute forgetting of previous CL tasks
+
+    Arguments:
+    args
+    results_file: JSON file containing model performances on each upstream task in CL setting
+    model: Model that was trained in CL setting on multiple sequential tasks
+    task_trainers: List of Trainer classes for each CL task
+
+    Returns:
+    catastrophic_forgetting_dict: Dictionary containing catastrophic forgetting results
+    '''
 
     model_config = model_configs[args.encoder_name]
 
@@ -104,6 +129,7 @@ def catastrophic_forgetting_eval(args, results_file, model, task_trainers):
 
             catastrophic_forgetting_dict[task_key][prev_task_key] = {'prev_task': prev_task_key,
                                                                      'current_task': task_key,
+                                                                     'transfer_tasks': '{}->{}'.format(task_num, prev_task_num),
                                                                      'forgetting': forgetting_perc,
                                                                      'absolute_transfer_score': eval_score,
                                                                      'original_prev_task_score': baseline_score,

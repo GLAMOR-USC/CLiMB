@@ -18,6 +18,16 @@ logger.setLevel(logging.DEBUG)
 
 class LanguageDataset(Dataset):
     def __init__(self, processor, data_dir, split, task_name, n_shot=None, seed=None):
+        """
+        Initiate the Dataset for language-only tasks - loads all the sentences and the corresponding labels into self.data
+
+        data_dir: path containing annotations and images
+        split: either train/val/test
+        task_name: the name of the language-only task
+        n_shot: n-shot per class for classification tasks; number of examples for multiple-choice tasks
+        seed: random seed for low-shot subsampling
+        """
+
         self.task_name = task_name
 
         if split == 'train':
@@ -57,6 +67,19 @@ class LanguageDataset(Dataset):
 
 
 def get_data_loader(tokenizer, task_name, split, max_len, batch_size, num_workers, data_dir=None, n_shot=None, seed=None):
+    """
+    Retrun a torch.utils.data.DataLoader for the dataset
+
+    tokenizer: tokenizer of the backbone model
+    task_name: the task name of the current language-only task
+    split: either train/val/test split
+    max_len: the maximum sequence length of the current task
+    batch_size: how many samples per batch to load
+    num_workers: how many subprocesses to use for data loading
+    data_dir: path containing the dataset
+    n_shot: n-shot per class for classification tasks; number of examples for multiple-choice tasks
+    seed: random seed for low-shot subsampling
+    """
 
     task_name = task_name.lower()
     processor_map = {'piqa': PIQAProcessor, 'hellaswag': HellaSwagProcessor, 'commonsenseqa': CommonsenseQAProcessor, 

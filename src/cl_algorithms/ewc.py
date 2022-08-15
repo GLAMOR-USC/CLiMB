@@ -1,23 +1,38 @@
+import argparse
 import random
 from collections import defaultdict
 from tqdm import tqdm
 import logging
+from typing import List, Dict
+
 import torch
 
 from configs.task_configs import task_configs
+from modeling.continual_learner import ContinualLearner
+from train.visionlanguage_tasks.task_trainer import TaskTrainer
 
 logger = logging.getLogger(__name__)
 
 class EWC:
 
-    def __init__(self, args):
+    def __init__(self, args: argparse.Namespace):
+        '''
+        Initializes an EWC object with EWC parameters and empty dictionaries that will be used for storing model parameters
+        '''
         self.fisher_sample_percentage = args.ewc_fisher_sample_percentage
         self.ewc_loss_weight = args.ewc_loss_weight
         self.fisher_dict = {}
         self.param_dict = {}
         self.task_keys = []
 
-    def save_task_parameters(self, task_key, model, task_trainer, device):
+    def save_task_parameters(self, 
+                             task_key: str, 
+                             model: ContinualLearner, 
+                             task_trainer: TaskTrainer, 
+                             device: torch.device):
+        '''
+        Saves model parameters after training on a task, and computes Fisher information matrix
+        '''
 
         task_config = task_configs[task_key]
         self.fisher_dict[task_key] = defaultdict(float)
@@ -56,7 +71,10 @@ class EWC:
 
         logger.info("Saved encoder parameters for {} task!".format(task_config['task_name']))
 
-    def compute_ewc_loss(self, model):
+    def compute_ewc_loss(self, model: ContinualLearner) -> (str, torch.Tensor):
+        '''
+        Randomly samples previous task, and computes EWC loss by comparing model parameters with previous parameters
+        '''
 
         ewc_task_key = random.choice(self.task_keys)
         ewc_loss = 0

@@ -36,6 +36,16 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def train_vision(args, encoder, task_config, model_config, tokenizer, device):
+    '''
+    Train the encoder on the vision-only downstream tasks
+
+    args: arguments provided by user
+    encoder: trained encoder on upstream tasks
+    task_config: dictionary containing task-specific configuration parameters for the current task
+    model_config: dictionary containing model-specific configuration parameters
+    tokenizer: tokenzier of the backbone encoder
+    device: cuda/cpu
+    '''
 
     # get upstream algo name for logging
     upstream_name = args.checkpoint_name.split('/')[-2]
@@ -166,6 +176,9 @@ def train_vision(args, encoder, task_config, model_config, tokenizer, device):
 
 
 def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, task_name, upstream_name, output_dir):
+    '''
+    Write the results to the .json file in output_dir
+    '''
 
     tree = lambda: defaultdict(tree)
     all_scores = tree()
@@ -184,6 +197,14 @@ def write_results(n_shot, subsample_seed, best_score, test_score, best_epoch, ta
 
 
 def eval_coco(args, model, eval_dataloader, device, batch2inputs_converter):
+    '''
+    Evaluation for the MS-COCO object classification task, using F1-micro as the metric
+
+    model: the trained model
+    eval_dataloader: dataloader for evaluation
+    device: cuda/cpu
+    batch2inputs_converter: a model-specific fuction that converts inputs to the format the model takes
+    '''
 
     model.eval()
     act_fn = nn.Sigmoid()
@@ -211,6 +232,14 @@ def eval_coco(args, model, eval_dataloader, device, batch2inputs_converter):
 
 
 def eval_acc(args, model, eval_dataloader, device, batch2inputs_converter):
+    '''
+    Evaluation on the dev set and test set, using accuracy as the metric
+
+    model: the trained model
+    eval_dataloader: dataloader for evaluation
+    device: cuda/cpu
+    batch2inputs_converter: a model-specific fuction that converts inputs to the format the model takes
+    '''
 
     model.eval()
     eval_score = 0

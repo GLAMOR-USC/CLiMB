@@ -1,9 +1,14 @@
+import argparse
 import random
 import logging
+from typing import List, Dict
 
+import torch
 from torch import nn
 from torch.optim import AdamW
 
+from modeling.continual_learner import ContinualLearner
+from train.visionlanguage_tasks.task_trainer import TaskTrainer
 from utils.wandb import wandb_logger
 
 logger = logging.getLogger(__name__)
@@ -12,25 +17,43 @@ logger = logging.getLogger(__name__)
 class ExperienceReplayMemory:
 
     def __init__(self):
+        '''
+        Initializes ER memory with empty memory buffer dict
+        '''
         self.memory_buffers = {}
 
-    def add_task_memory_buffer(self, args, task_key, task_config, task_trainer, memory_percentage, sampling_strategy):
+    def add_task_memory_buffer(self, 
+                               args: argparse.Namespace, 
+                               task_key: str, 
+                               task_config: Dict, 
+                               task_trainer: TaskTrainer, 
+                               memory_percentage: float, 
+                               sampling_strategy: str):
+        '''
+        Creates a memory buffer for new task
+        '''
 
         task_buffer = TaskMemoryBuffer(args, task_key, task_config, task_trainer, memory_percentage, sampling_strategy)
         self.memory_buffers[task_key] = task_buffer
 
-    def do_replay(self):
+    def do_replay(self) -> bool:
         '''
         Return true if there are any tasks in the memory to do replay on, else False
         '''
         return True if len(self.memory_buffers) > 0 else False
 
-    def sample_replay_task(self):
+    def sample_replay_task(self) -> str:
+        '''
+        Samples a previous task at random
+        '''
         previous_tasks = list(self.memory_buffers.keys())
         sampled_previous_task = random.choice(previous_tasks)
         return sampled_previous_task
 
-    def run_replay_step(self, task_key, model):
+    def run_replay_step(self, task_key: str, model: ContinualLearner) -> torch.Tensor:
+        '''
+        Performs a single training step on previous task, by sampling a batch from task bugger
+        '''
         task_buffer = self.memory_buffers[task_key]
         task_config = task_buffer.task_config
         task_trainer = task_buffer.task_trainer
@@ -48,7 +71,17 @@ class TaskMemoryBuffer:
     '''
     Buffer of training examples that can be used for replay steps
     '''
-    def __init__(self, args, task_key, task_config, task_trainer, memory_percentage, sampling_strategy):
+    def __init__(self, 
+                 args: argparse.Namespace, 
+                 task_key: str, 
+                 task_config: Dict, 
+                 task_trainer: TaskTrainer, 
+                 memory_percentage: float, 
+                 sampling_strategy: str):
+
+        '''
+        Creates a memory buffer for new task, which samples a small percentage of training data for experience replay
+        '''
 
         self.task_key = task_key
         self.task_name = task_config['task_name']
@@ -82,7 +115,7 @@ class TaskMemoryBuffer:
     def __len__(self):
         return len(self.memory_idxs)
 
-    def sample_replay_batch(self):
+    def sample_replay_batch(self) -> Dict:
 
         sampled_instances = random.sample(self.memory_idxs, self.batch_size)
         batch = self.batch_collate_fn([self.dataset[i] for i in sampled_instances])

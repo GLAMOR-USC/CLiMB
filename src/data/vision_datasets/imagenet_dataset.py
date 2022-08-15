@@ -28,6 +28,15 @@ logging.basicConfig(
 class ImageNetDataset(Dataset):
 
     def __init__(self, data_dir, mode, n_shot=None, subsample_seed=None):
+        """
+        Initiate the Dataset - loads all the image filenames and the corresponding labels into self.dataset
+
+        data_dir: path containing annotations and images
+        mode: either train/val/test
+        n_shot: n-shot per class
+        subsampled_seed: random seed for low-shot subsampling
+        """
+
         self.data_dir = data_dir
         self.mode = mode
         self.n_shot = n_shot
@@ -44,6 +53,13 @@ class ImageNetDataset(Dataset):
 
 
     def get_train_val_split(self, dataset, val_num_per_class=50):
+        """
+        Split the validation set from the original training set and do low-shot subsampling
+
+        dataset: the original training set
+        val_num_per_class: number of data in the validation set per class
+        """
+
         train_dataset, val_dataset = [], []
         # split each class into train/val; balanced
         for cls_data in dataset:
@@ -68,6 +84,11 @@ class ImageNetDataset(Dataset):
 
 
     def preprocess_train_val(self):
+        """
+        Preprocess the training set and validation set, where we split the val set from the training set
+        Balance each class when doing low-shot sampling
+        """
+
         self.image_dir = os.path.join(self.data_dir, 'train')
         all_classes = sorted(os.listdir(self.image_dir))
         assert len(all_classes) == 1000
@@ -84,6 +105,10 @@ class ImageNetDataset(Dataset):
             
 
     def preprocess_test(self):
+        """
+        Preprocess the test set (we use the original val set as the test set)
+        """
+
         self.image_dir = os.path.join(self.data_dir, 'val')
         annot_file = os.path.join(self.data_dir, "LOC_val_solution.csv")
 
@@ -122,6 +147,16 @@ def batch_collate(batch):
 
 
 def get_data_loader(args, data_dir, split, n_shot=None, subsampled_seed=None):
+    """
+    Retrun a torch.utils.data.DataLoader for the dataset
+
+    args: arguments provided by user
+    data_dir: path containing ImageNet annotations and images
+    split: either train/val/test split
+    n_shot: n-shot per class
+    subsampled_seed: random seed for low-shot subsampling
+    """
+
     logger.info(f"Creating ImageNet {split} dataloader")
 
     dataset = ImageNetDataset(data_dir, split, n_shot, subsampled_seed)

@@ -11,6 +11,7 @@ from collections import defaultdict
 import pickle as pkl
 import pdb
 import jsonlines
+from typing import List, Dict
 
 import numpy as np
 import torch
@@ -18,12 +19,9 @@ import torch.nn.functional as F
 from torchvision import transforms as T
 from torch.utils.data import Dataset
 
-
-from transformers import BertTokenizer
-
 from PIL import Image
-#from utils.image_utils import resize_image
 
+from data.image_collation import image_collate
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -41,9 +39,6 @@ GENDER_NEUTRAL_NAMES = ['Casey', 'Riley', 'Jessie', 'Jackie', 'Avery', 'Jaime', 
 
 def process_list(mytext, objects):
     ## Read file with the name of the color per object
-    #file = open('colors.txt', 'r')  #lst_colors = file.readlines() #file.close()
-    lst_colors = ['person'+ str(i) for i in range(1,57)]
-    #print(lst_colors)
     
     ## processing the text
     text = ''
@@ -52,13 +47,11 @@ def process_list(mytext, objects):
         if(type(element) == list):     #### If it's a list we need to process each object 
             for subelement in element:
                 if(objects[int(subelement)] == 'person'):
-                    #temporal_text =  'the ' + str(lst_colors[int(subelement)]).strip() #+ ' ' + str(objects[int(subelement)])
                     temporal_text = GENDER_NEUTRAL_NAMES[int(subelement)]
                 else:
                     temporal_text = 'the gray ' + str(objects[int(subelement)]).strip()
         elif(type(element) == int):
             if(objects[int(element)] == 'person'):
-                #temporal_text = 'the ' + str(lst_colors[int(element)]).strip() #+ ' ' + str(objects[int(element)])
                 temporal_text = GENDER_NEUTRAL_NAMES[int(subelement)]
             else:
                 temporal_text = 'the gray ' + str(objects[int(subelement)])
@@ -69,21 +62,37 @@ def process_list(mytext, objects):
     return text
 
 class VCRDataset(Dataset):
-    def __init__(self, data_dir, split, tokenizer, task_type='answer'):
+
+    def __init__(self, 
+                 data_dir: str, 
+                 split: str, 
+                 task_type='answer',
+                 **kwargs):
+
+        """
+        Initiates the VCRDataset - loads all the questions and answers, concatenates each question and answer into a choice text
+        (and converts to input IDs using the tokenizer, if provided) and stores all 4 choice texts and label 
+        Every item in self.data corresponds to a single VCR input
+
+        Args:
+        data_dir : path containing VCR questions and annotations
+        split: either train/val/test split
+        task_type: either 'answer' or 'rationale', depending on if we do Q->A or QA->R
+
+        Returns:
+        Loads all annotations into self.data, where each item is a single VCR input
+        """
 
         self.data_dir = data_dir
         self.images_dataset = self.data_dir + 'draw_images/bbox/'    
             
-        #self.images_dataset = images_dataset
         self.image_dir = os.path.join(data_dir, 'vcr')
         self.split = split
-        self.tokenizer = tokenizer
         self.task_type = task_type
-        #self.visual_input_type = visual_input_type
+        self.tokenizer = kwargs['tokenizer'] if 'tokenizer' in kwargs else None
+        print(self.tokenizer)
 
         self.annotations_file = os.path.join(data_dir, 'annotation/{}.jsonl'.format(split))
-        #self.categories = ['entailment', 'contradiction', 'neutral']
-        #self.cat2label = {cat: i for i, cat in enumerate(self.categories)}
 
         self.cached_data_file = os.path.join(data_dir, 'cached_vcr_data', 'vcr_'+ str(task_type) + '_' + '{}.pkl'.format(split))
         if os.path.isfile(self.cached_data_file):
@@ -92,13 +101,10 @@ class VCRDataset(Dataset):
             self.data = []
             json_lines = jsonlines.open(self.annotations_file)
             count = 0
-            for line in json_lines:
+            for line in tqdm(json_lines):
                 
                 image_path = os.path.join('drawn_images/bbox/' + str(split) + '/' + str(task_type)+ '/' + str(line['annot_id']) +'.jpg')  ## train-0, train-1, train-2
-                #print(image_id)
-                #exit()
-                texts = []
-                #print('task_type: ', task_type)
+                multichoice_texts = []
                 objects = line['objects']   ### objects
                 
                 question = process_list(line['question'], objects)  ### question
@@ -107,28 +113,27 @@ class VCRDataset(Dataset):
                     for answer in line['answer_choices']:                        
                         answer1 = process_list(answer, objects)
                         text = question + ' [SEP] ' + answer1
-                        #print('answer: ', text)
-                        texts.append(text)
+                        multichoice_texts.append(text)
                     label = int(line['answer_label']) ##number
+
                 else:
                     ### rationales:  question + '[SEP]' + answer + '[SEP]' + rationale
                     answer  = process_list( line['answer_choices'][int(line['answer_label'])], objects)
                     for rationale in line['rationale_choices']:
                         rationale1 = process_list(rationale, objects)
                         text = question + ' [SEP] ' + answer + ' [SEP] ' + rationale1
-                        #print('rationale: ', text)
-                        texts.append(text)
-                    
+                        multichoice_texts.append(text)
                     label = int(line['rationale_label']) ##number
-                #print('image_id: ', image_id,'\n, text: ', texts, '\n, label: ', label)
 
-                #tokens = [self.tokenizer.tokenize(text) for text in texts]
-                #print(tokens)
-                #####input_ids = self.tokenizer.convert_tokens_to_ids(tokens[0])
+                if self.tokenizer is not None:
+                    multichoice_tokens = [self.tokenizer.tokenize(text) for text in multichoice_texts]
+                    multichoice_input_ids = [self.tokenizer.convert_tokens_to_ids(t) for t in multichoice_tokens]
+                else:
+                    multichoice_input_ids = []
 
                 doc = {'image_path': image_path,
-                        'text': texts,
-                        #'text_input_ids': input_ids,
+                        'texts': multichoice_texts,
+                        'input_ids': multichoice_input_ids,
                         'label': label}
                 self.data.append(doc)
                 
@@ -139,7 +144,16 @@ class VCRDataset(Dataset):
     def __len__(self):
         return self.n_examples
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
+
+        """
+        Args:
+        index : index of element in self.data to return as data instance
+
+        Returns:
+        dictionary containing inputs and targets for model to do VCR
+        """
+
         example = self.data[index]
         
         image_fn     = os.path.join(self.data_dir, example['image_path'])
@@ -149,12 +163,19 @@ class VCRDataset(Dataset):
         if min(list(image.size)) > 384:
             image = pil_transform(image)
 
-        text    = example['text']
+        texts    = example['texts']
         label   = example['label']
 
-        return  text, image, label
+        return  {'texts': texts, 
+                 'image': image, 
+                 'label': label
+                 }
 
-    def convert_to_low_shot(self, low_shot_percentage):
+    def convert_to_low_shot(self, low_shot_percentage: float):
+        """
+        Args:
+        low_shot_percentage: float between 0 and 1, telling what % of full data to retain for low-shot setting
+        """
 
         assert self.split == 'train'
         logger.info("Converting VCR train split into low-shot dataset, with {:.2f}% training samples...".format(low_shot_percentage*100.0))
@@ -166,30 +187,58 @@ class VCRDataset(Dataset):
 
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
-def vcr_batch_collate(batch, visual_input_type):
-    
-    if visual_input_type == 'pil-image':
-        texts, pil_objs, labels = zip(*batch)
+def vcr_batch_collate(batch: List[Dict], 
+                      visual_input_type: str):
 
-    return {'raw_texts': list(texts),
-            'images': list(pil_objs),
+    """
+    Collates each model input for all batch items into a single model input (e.g. converts a list of input_ids into a matrix of size (batch_size, max_len))
+
+    Args:
+    batch - list of batch items, each item being a dictionary returned by Dataset's __getitem__ method
+    visual_input_type: string which specifies the type of visual input
+
+    Returns:
+    Dictionary containing batched inputs and outputs
+    """
+
+    assert visual_input_type == 'pil-image'
+    texts = [x['texts'] for x in batch]
+    pil_objs = [x['image'] for x in batch]
+    labels = [x['label'] for x in batch]
+
+    return {'raw_texts': texts,
+            'images': pil_objs,
             'labels': torch.LongTensor(labels)}
 
-def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type, visual_input_type):
-    
+def build_vcr_dataloader(args, 
+                         data_dir: str, 
+                         split: str, 
+                         task_type: str, 
+                         visual_input_type: str,
+                         **kwargs) -> torch.utils.data.DataLoader:
+
+    """
+    Creates the VCR Dataloader, which gives batches of VCR inputs and outputs
+
+    Args:
+    data_dir : path containing VCR questions and annotations.
+    split: either train/val split
+    task_type: either 'answer' or 'rationale', depending on if we do Q->A or QA->R
+    visual_input_type: format of visual input to model
+
+    Returns:
+    DataLoader object
+    """
+
     batch_size = int(args.batch_size/4)
     shuffle = True if split == 'train' else False
 
+    assert visual_input_type == 'pil-image'     # VCR not supported for other visual inputs yet!
+
     logger.info("Creating VCR {} dataloader with batch size of {}".format(split, batch_size))
 
-    dataset = VCRDataset(data_dir, split, tokenizer, task_type)
+    dataset = VCRDataset(data_dir, split, task_type, **kwargs)
     
-    #image, text, label = dataset[0]
-    #print(type(image))
-    #print(type(text), text)
-    #print(type(label), label)
-
-    #num_labels = dataset.num_labels
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers=args.num_workers,
@@ -198,8 +247,6 @@ def build_vcr_dataloader(args, data_dir, split, tokenizer, task_type, visual_inp
         collate_fn=lambda x: vcr_batch_collate(x, visual_input_type))
     return dataloader
 
-
-    #### let's concatenate:
     
 if __name__ == '__main__':
 
@@ -217,33 +264,15 @@ if __name__ == '__main__':
     objects = ['person', 'person', 'bottle']
     #process_list(text, objects)
 
+    from transformers import BertTokenizer
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     #vcr.VCRDataset(data_dir, split, tokenizer, task_type='answer')
 
     vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer', visual_input_type=args.visual_input_type)
     vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer', visual_input_type=args.visual_input_type)
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'rationale', visual_input_type=args.visual_input_type)
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'rationale', visual_input_type=args.visual_input_type)
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', task_type = 'rationale', visual_input_type=args.visual_input_type)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val', task_type = 'rationale', visual_input_type=args.visual_input_type)
 
-    #max_token_len = 0
-    #len_over_40 = 0
-    #total = 0
-    #for batch in tqdm(vcr_val_dataloader):
-    #        #print(batch['texts'])
-    #        #print(batch['images'])
-    #        #print(batch['labels'])
-    #        for answer_set in batch['texts']:
-    #            for choice in answer_set:
-    #                tokens = tokenizer.tokenize(choice)
-    #                ids = tokenizer.convert_tokens_to_ids(tokens)
-    #                if len(ids) >= 40:
-    #                    len_over_40 += 1
-    #                max_token_len = max(max_token_len, len(ids))
-    #                total += 1
-    #        #pdb.set_trace() 
-    #print("Percent of samples with > 40 token len: {:.4f}%".format(100.0*len_over_40/total))
-    #print("Maximum length = {}".format(max_token_len))
-
-
-#main()
+    for batch in vcr_train_dataloader:
+        pdb.set_trace()

@@ -16,7 +16,9 @@ logger.setLevel(logging.DEBUG)
 
 
 class DataProcessor(object):
-    """Base class for data converters for multiple choice data sets."""
+    """
+    Base class for data converters for language-only tasks
+    """
     def __init__(self):
         label_list = self._set_label_list()
         self.label_map = {label: i for i, label in enumerate(label_list)}
@@ -67,6 +69,17 @@ class DataProcessor(object):
 
 
 def split_train_dev(data, seed=2022, dev_ratio=0.3):
+    """
+    Split the dev set from the original training set
+    Note: as we don't have the labels for the original test sets,
+    we use the original dev sets as our test sets and
+    split our dev sets from the original training set for hyperparmeter tuning
+
+    data: the original training set data
+    seed: random seed for dev set sampling  
+    dev_ratio: the ratio to split the dev set; train: dev = (1 - dev_ratio): dev_ratio
+    """
+
     n_labeled_data = len(data)
     np.random.seed(seed)
     dev_ids = set(np.random.choice(n_labeled_data, int(n_labeled_data*dev_ratio), replace=False))
@@ -81,6 +94,9 @@ def split_train_dev(data, seed=2022, dev_ratio=0.3):
 
 
 class HellaSwagProcessor(DataProcessor):
+    """ 
+    Processor for the HellaSwag dataset
+    """
     def get_train_examples(self, data_dir):
         path = os.path.join(data_dir, "hellaswag_train.jsonl")
         logger.info("Loading Training set from {}".format(path))
@@ -119,6 +135,9 @@ class HellaSwagProcessor(DataProcessor):
 
 
 class PIQAProcessor(DataProcessor):
+    """ 
+    Processor for the PIQA dataset
+    """
     def get_train_examples(self, data_dir):
         path = os.path.join(data_dir, "train.jsonl")
         label_path = os.path.join(data_dir, "train-labels.lst")
@@ -164,6 +183,9 @@ class PIQAProcessor(DataProcessor):
 
 
 class CommonsenseQAProcessor(DataProcessor):
+    """ 
+    Processor for the Commonsense QA dataset
+    """
     def get_train_examples(self, data_dir):
         path = os.path.join(data_dir, "train_rand_split.jsonl")
         logger.info("Loading Training set from {}".format(path))
@@ -201,6 +223,9 @@ class CommonsenseQAProcessor(DataProcessor):
 
 
 class COSMOSQAProcessor(DataProcessor):
+    """ 
+    Processor for the COSMOS QA dataset
+    """
     def get_train_examples(self, data_dir):
         path = os.path.join(data_dir, "train.csv")
         logger.info("Loading Training set from {}".format(path))
@@ -240,6 +265,9 @@ class COSMOSQAProcessor(DataProcessor):
     
 
 class IMDBProcessor():
+    """ 
+    Processor for the IMDb dataset
+    """
     def __init__(self, cache_dir='cache_imdb'):
         from datasets import load_dataset
         dataset = load_dataset("imdb", cache_dir=cache_dir)
@@ -257,6 +285,9 @@ class IMDBProcessor():
 
 
 class GLUEProcessor():
+    """ 
+    Processor for datasets in the GLUE benchmark
+    """
     def __init__(self, task='sst2', cache_dir='cache_glue'):
         from datasets import load_dataset
         dataset = load_dataset('glue', task, cache_dir=cache_dir)

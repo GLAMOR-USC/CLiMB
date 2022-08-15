@@ -27,6 +27,15 @@ logging.basicConfig(
 class Places365Dataset(Dataset):
 
     def __init__(self, data_dir, mode, n_shot=None, subsample_seed=None):
+        """
+        Initiate the Dataset - loads all the image filenames and the corresponding labels into self.dataset
+
+        data_dir: path containing annotations and images
+        mode: either train/val/test
+        n_shot: n-shot per class
+        subsampled_seed: random seed for low-shot subsampling
+        """
+
         remap_mode = {'train':'train', 'val':'train', 'test':'val'}
         self.image_dir = os.path.join(data_dir, remap_mode[mode])
         self.mode = mode
@@ -38,6 +47,13 @@ class Places365Dataset(Dataset):
 
 
     def get_train_val_split(self, dataset, val_num_per_class=50):
+        """
+        Split the validation set from the original training set and do low-shot subsampling
+
+        dataset: the original training set
+        val_num_per_class: number of data in the validation set per class
+        """
+
         train_dataset, val_dataset = [], []
         # split each class into train/val; balanced
         for cls_data in dataset:
@@ -62,6 +78,11 @@ class Places365Dataset(Dataset):
             
 
     def preprocess(self):
+        """
+        Preprocess train/val/test sets, where we split the val set from the training set
+        and use the origianl val set as the test set
+        Balance each class in the training set and validation set when doing low-shot sampling
+        """
         all_classes = sorted(os.listdir(self.image_dir))
         assert len(all_classes) == 365
 
@@ -108,6 +129,16 @@ def batch_collate(batch):
 
 
 def get_data_loader(args, data_dir, split, n_shot=None, subsampled_seed=None):
+    """
+    Retrun a torch.utils.data.DataLoader for the dataset
+
+    args: arguments provided by user
+    data_dir: path containing annotations and images
+    split: either train/val/test split
+    n_shot: n-shot per class
+    subsampled_seed: random seed for low-shot subsampling
+    """
+
     logger.info(f"Creating Places365 {split} dataloader")
 
     dataset = Places365Dataset(data_dir, split, n_shot, subsampled_seed)

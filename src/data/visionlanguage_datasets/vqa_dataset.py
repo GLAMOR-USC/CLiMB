@@ -11,6 +11,7 @@ from tqdm import tqdm
 from collections import defaultdict
 import pickle as pkl
 import pdb
+from typing import List, Dict
 
 import numpy as np
 import torch
@@ -18,13 +19,12 @@ import torch.nn.functional as F
 from torchvision import transforms as T
 from torch.utils.data import Dataset
 
-from transformers import BertTokenizer
-
 from PIL import Image
 from utils.image_utils import resize_image
 from utils.vqa_utils import get_score, target_tensor
 
 from data.image_datasets.cocoimages_dataset import MSCOCOImagesDataset
+from data.image_collation import image_collate
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -34,17 +34,34 @@ logging.basicConfig(
 
 class VQADataset(Dataset):
 
-    def __init__(self, data_dir, images_dataset, split, tokenizer, visual_input_type='raw'):
+    def __init__(self, 
+                 data_dir: str, 
+                 images_dataset: MSCOCOImagesDataset, 
+                 split: str, 
+                 **kwargs):
+
+        """
+        Initiates the VQADataset - loads all the questions (and converts to input IDs using the tokenizer, if provided) 
+        and answers (including converting each to a numeric label, and a score based on occurence from annotators)
+        Every item in self.data corresponds to a single QA pair, with a corresponding image
+
+        Args:
+        data_dir : path containing VQA questions and annotations. Also contains mapping from each answer in set of possible answers to a numerical label
+        images_dataset : instance of MSCOCOImagesDataset, that is used to retrieve the MS-COCO image for each question
+        split: either train/val split
+
+        Returns:
+        Loads all annotations into self.data, where each item is a single VQA pair
+        """
 
         self.images_dataset = images_dataset
         self.data_dir = data_dir
         self.split = split
-        self.tokenizer = tokenizer
-        self.visual_input_type = visual_input_type
+        self.tokenizer = kwargs['tokenizer'] if 'tokenizer' in kwargs else None
 
         self.annotations_file = os.path.join(data_dir, 'v2_mscoco_{}2014_annotations.json'.format(split))
         self.questions_file = os.path.join(data_dir, 'v2_OpenEnded_mscoco_{}2014_questions.json'.format(split))
-        self.ans2label_file = os.path.join(data_dir, 'ans2label.pkl'.format(split)) # Where does this file come from?
+        self.ans2label_file = os.path.join(data_dir, 'ans2label.pkl'.format(split))
 
         # Load mapping from answers to labels
         self.ans2label = pkl.load(open(self.ans2label_file, 'rb'))
@@ -74,8 +91,12 @@ class VQADataset(Dataset):
                 qdata = qid2qdata[qid]
                 assert qdata['image_id'] == image_id
                 question = qdata['question']
-                tokens = self.tokenizer.tokenize(question)
-                input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+                if self.tokenizer is not None:
+                    tokens = self.tokenizer.tokenize(question)
+                    input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+                else:
+                    tokens = []
+                    input_ids = []
 
                 # Map from each crowdsourced answer to occurrences in annotation
                 answers = [a['answer'] for a in anno['answers']]
@@ -115,12 +136,21 @@ class VQADataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
+
+        """
+        Args:
+        index : index of element in self.data to return as data instance
+
+        Returns:
+        dictionary containing inputs and targets for model to do VQA
+
+        """
 
         example = self.data[index]
         question_id = example['question_id']
 
-        # Tokenizer the input question 
+        # Tokenize the input question 
         question = example['question']
         input_ids = example['question_input_ids']
 
@@ -132,9 +162,19 @@ class VQADataset(Dataset):
         scores = example['scores']
         target_scores = target_tensor(self.num_labels, labels, scores)
 
-        return question, input_ids, image, labels, target_scores, question_id
+        return {'question': question, 
+                'input_ids': input_ids, 
+                'image': image, 
+                'labels': labels, 
+                'target_scores': target_scores, 
+                'question_id': question_id
+                }
 
-    def convert_to_low_shot(self, low_shot_percentage):
+    def convert_to_low_shot(self, low_shot_percentage: float):
+        """
+        Args:
+        low_shot_percentage: float between 0 and 1, telling what % of full data to retain for low-shot setting
+        """
 
         assert self.split == 'train'
         logger.info("Converting VQA train split into low-shot dataset, with {:.2f}% training samples...".format(low_shot_percentage*100.0))
@@ -146,15 +186,25 @@ class VQADataset(Dataset):
 
         logger.info("Converted into low-shot dataset, with {} examples".format(self.n_examples))
 
-def vqa_batch_collate(batch, visual_input_type):
+def vqa_batch_collate(batch: List[Dict], 
+                      visual_input_type: str):
 
-    #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
+    """
+    Collates each model input for all batch items into a single model input (e.g. converts a list of input_ids into a matrix of size (batch_size, max_len))
+
+    Args:
+    batch - list of batch items, each item being a dictionary returned by Dataset's __getitem__ method
+    visual_input_type: string which specifies the type of visual input
+
+    Returns:
+    Dictionary containing batched inputs and outputs
+    """
+
     pad_token = 0   # tokenizer.pad_token_id
 
     # Pad the text inputs
-    # Do we need to set a global MAX_LEN to clip the super long questions? (this really depends on the dataset)
-    questions = [x[0] for x in batch]
-    input_ids = [x[1] for x in batch]
+    questions = [x['question'] for x in batch]
+    input_ids = [x['input_ids'] for x in batch]
     max_len = max([len(x) for x in input_ids])
     input_ids_padded = []
     attn_masks = []
@@ -168,25 +218,13 @@ def vqa_batch_collate(batch, visual_input_type):
     attn_mask = torch.tensor(attn_masks, dtype=torch.long)
 
     # Stack the target tensors
-    batch_labels = [x[3] for x in batch]
-    batch_scores = [x[4] for x in batch]
+    batch_labels = [x['labels'] for x in batch]
+    batch_scores = [x['target_scores'] for x in batch]
     batch_scores = torch.stack(batch_scores, dim=0)
 
-    # Stack the image tensors, doing padding if necessary for the sequence of region features
-    image_tensors = [x[2] for x in batch]
-    if visual_input_type == 'pil-image':
-        images = image_tensors                                          # Not actually tensors for this option, list of PIL.Image objects
-    if visual_input_type == 'raw':
-        images = torch.stack(image_tensors, dim=0)               # Stacks individual raw image tensors to give (B, 3, W, H) tensor
-    elif visual_input_type == 'fast-rcnn':
-        max_len = max([t.shape[0] for t in image_tensors])
-        image_tensors_padded = []
-        for i in range(len(image_tensors)):
-            padding_tensor = torch.zeros(max_len-image_tensors[i].shape[0], image_tensors[i].shape[1])
-            padded_tensor = torch.cat((image_tensors[i], padding_tensor), dim=0)
-            assert padded_tensor.shape[0] == max_len
-            image_tensors_padded.append(padded_tensor)
-        images = torch.stack(image_tensors_padded, dim=0)        # Pads region features with 0 vectors to give (B, R, hv) tensor
+    # Depending on the visual_input_type variable, process the images accordingly
+    images = [x['image'] for x in batch]
+    images = image_collate(images, visual_input_type)
 
     return {'raw_texts': questions,
             'input_ids': input_ids,
@@ -195,14 +233,32 @@ def vqa_batch_collate(batch, visual_input_type):
             'target_scores': batch_scores,
             'labels': batch_labels}
 
-def build_vqa_dataloader(args, data_dir, images_dataset, split, tokenizer, visual_input_type):
+def build_vqa_dataloader(args, 
+                         data_dir: str, 
+                         images_dataset: MSCOCOImagesDataset, 
+                         split: str, 
+                         visual_input_type: str,
+                         **kwargs) -> torch.utils.data.DataLoader:
+
+    """
+    Creates the VQA Dataloader, which gives batches of VQA inputs and outputs
+
+    Args:
+    data_dir : path containing VQA questions and annotations.
+    images_dataset : instance of MSCOCOImagesDataset, that is used to retrieve the MS-COCO image for each question
+    split: either train/val split
+    visual_input_type: format of visual input to model
+
+    Returns:
+    DataLoader object
+    """
 
     batch_size = args.batch_size
     shuffle = True if split == 'train' else False
 
     logger.info("Creating VQAv2 {} dataloader with batch size of {}".format(split, batch_size))
 
-    dataset = VQADataset(data_dir, images_dataset, split, tokenizer, visual_input_type)
+    dataset = VQADataset(data_dir, images_dataset, split, **kwargs)
     num_labels = dataset.num_labels
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -223,9 +279,11 @@ if __name__ == '__main__':
             self.visual_input_type = 'pil-image'
     args = Args()
 
-    images_dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/')
+    from transformers import BertTokenizer
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    vqa_dataloader = build_vqa_dataloader(args, data_dir, images_dataset, 'val', tokenizer, args.visual_input_type)
+
+    images_dataset = MSCOCOImagesDataset('/data/datasets/MCL/ms-coco/', args.visual_input_type)
+    vqa_dataloader = build_vqa_dataloader(args, data_dir, images_dataset, 'val', args.visual_input_type, tokenizer=tokenizer)
 
     for batch in vqa_dataloader:
         pdb.set_trace() 

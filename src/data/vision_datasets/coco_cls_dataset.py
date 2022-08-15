@@ -29,6 +29,15 @@ logging.basicConfig(
 class CocoClsDataset(Dataset):
 
     def __init__(self, data_dir, mode, n_shot=None, subsample_seed=None):
+        """
+        Initiate the Dataset - loads all the image filenames and the corresponding labels into self.dataset
+
+        data_dir: path containing annotations and images
+        mode: either train/val/test
+        n_shot (float): ratio for low-shot subsampling
+        subsampled_seed: random seed for low-shot subsampling
+        """
+
         self.data_dir = data_dir
         self.mode = mode
         self.n_shot = n_shot
@@ -44,6 +53,13 @@ class CocoClsDataset(Dataset):
 
 
     def get_train_val_split(self, dataset, val_ratio=0.1):
+        """
+        Split the validation set from the original training set and do low-shot subsampling
+
+        dataset: the original training set
+        val_ratio: the ratio to split the validation set
+        """
+
         train_dataset, val_dataset = [], []
         # shuffle before train/val split
         random.seed(2022)
@@ -66,6 +82,12 @@ class CocoClsDataset(Dataset):
 
 
     def preprocess(self):
+        """
+        Preprocess train/val/test sets, where we split the val set from the training set
+        and use the origianl val set as the test set
+        We formulate the task as a multi-label object classification task
+        """
+
         cached_fn = os.path.join(self.data_dir, f'cached_{self.fn_mode}.pkl')
         try:
             with open(cached_fn, 'rb') as f:
@@ -127,6 +149,16 @@ def batch_collate(batch):
 
 
 def get_data_loader(args, data_dir, split, n_shot=None, subsampled_seed=None):
+    """
+    Retrun a torch.utils.data.DataLoader for the dataset
+
+    args: arguments provided by user
+    data_dir: path containing annotations and images
+    split: either train/val/test split
+    n_shot (float): ratio for low-shot subsampling
+    subsampled_seed: random seed for low-shot subsampling
+    """
+
     logger.info(f"Creating COCO-classification {split} dataloader")
 
     dataset = CocoClsDataset(data_dir, split, n_shot, subsampled_seed)
