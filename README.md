@@ -21,7 +21,7 @@ conda activate climb
 2. Install requirements
 
 ```
-git clone https://github.com/GLAMOR-USC/CLiMB.git --recurse-submodules
+git clone https://github.com/tejas1995/MCL.git --recurse-submodules
 pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 cd src/adapter-transformers
 pip install -e .
