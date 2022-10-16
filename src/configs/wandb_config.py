@@ -1,6 +1,6 @@
 wandb_config = {
-    'entity': 'tejas1995',
-    'api_key': '8cd0c45d6a9418a2997ec6478116a01c14499820',
+    'entity': 'tejas1995',      # Enter your W&B username
+    'api_key': '',              # Enter your W&B API key
     'project_name': 'climb-cl',
     'log_freq': 100,
 }

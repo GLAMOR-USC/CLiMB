@@ -67,10 +67,10 @@ class VQADataset(Dataset):
         self.ans2label = pkl.load(open(self.ans2label_file, 'rb'))
         self.label2ans = {v: k for k, v in self.ans2label.items()}
         self.num_labels = len(self.label2ans)
-
+        self.num_answers = len(self.ans2label)
 
         self.cached_data_file = os.path.join(data_dir, 'cached_vqa_data', 'vqa_{}.pkl'.format(split))
-        if os.path.isfile(self.cached_data_file):
+        if os.path.exists(self.cached_data_file):
             # Load cached data
             self.data = pkl.load(open(self.cached_data_file, 'rb'))
 

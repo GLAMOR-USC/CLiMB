@@ -19,6 +19,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 from utils.image_utils import resize_image
 
+
 class Flickr30KImagesDataset(Dataset):
 
     def __init__(self, flickr_dir: str, visual_input_type: str, image_size=(384,640)):
@@ -58,10 +59,13 @@ class Flickr30KImagesDataset(Dataset):
 
         if self.visual_input_type == 'pil-image':
             return self.get_pil_image(image_id)
+
         if self.visual_input_type == 'raw':
             return self.get_raw_image_tensor(image_id)
+
         elif self.visual_input_type == 'fast-rcnn':
             raise NotImplementedError("Have not implemented Fast-RCNN feature inputs for Flickr30K images!")
+
 
     def get_pil_image(self, image_id: str) -> Image:
         '''

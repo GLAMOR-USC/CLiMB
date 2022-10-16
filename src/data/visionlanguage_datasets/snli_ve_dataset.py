@@ -19,8 +19,6 @@ import torch.nn.functional as F
 from torchvision import transforms as T
 from torch.utils.data import Dataset
 
-from transformers import BertTokenizer
-
 from PIL import Image
 from utils.image_utils import resize_image
 
@@ -68,7 +66,7 @@ class SnliVEDataset(Dataset):
         self.num_labels = len(self.categories)
 
         self.cached_data_file = os.path.join(data_dir, 'cached_ve_data', 'snli-ve_{}.pkl'.format(split))
-        if os.path.isfile(self.cached_data_file):
+        if os.path.exists(self.cached_data_file):
             self.data = pkl.load(open(self.cached_data_file, 'rb'))
         else:
             self.data = []
@@ -109,7 +107,7 @@ class SnliVEDataset(Dataset):
 
         example = self.data[index]
 
-        # Tokenizer the input hypothesis 
+        # Tokenize the input hypothesis 
         hypothesis = example['hypothesis']
         input_ids = example['hypothesis_input_ids']
 
@@ -158,6 +156,7 @@ def snlive_batch_collate(batch: List[Dict],
     Dictionary containing batched inputs and outputs
     """
 
+    #pad_token = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]   # should be 0, but doing this anyway
     pad_token = 0   # tokenizer.pad_token_id
 
     # Pad the text inputs

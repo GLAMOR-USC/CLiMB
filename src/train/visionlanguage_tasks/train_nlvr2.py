@@ -12,7 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 import numpy as np
 import torch
@@ -80,6 +80,11 @@ class NLVR2Trainer(TaskTrainer):
         self.loss_criterion = nn.CrossEntropyLoss()
         self.max_steps = len(self.nlvr_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
+        self.hparams = {
+                        'lr': self.lr,
+                        'weight_decay': self.weight_decay,
+                        'adam_epsilon': self.adam_epsilon,
+        }
 
     def get_train_dataloader(self):
         return self.nlvr_train_dataloader
@@ -87,7 +92,7 @@ class NLVR2Trainer(TaskTrainer):
     def get_collate_fn(self):
         return self.nlvr_train_dataloader.collate_fn
 
-    def forward_pass(self, model, batch: Dict, do_eval: bool = False) -> tuple:
+    def forward_pass(self, model, batch: Dict, do_eval: bool = False) -> Tuple:
         '''
         Forward pass of batch inputs through model
         output: tuple containing (encoder_pooled_output, output_logits)
@@ -121,9 +126,10 @@ class NLVR2Trainer(TaskTrainer):
         ewc_loss
         '''
 
+        target = batch['labels'].to(self.device)
+        
         output = self.forward_pass(model, batch)
         logits = output[1]
-        target = batch['labels'].to(self.device)
         loss = self.loss_criterion(logits, target)
 
         if ewc is not None and ewc.do_ewc() is True:
@@ -143,17 +149,7 @@ class NLVR2Trainer(TaskTrainer):
 
         return loss, output, ewc_task, ewc_loss
 
-    def create_optimizer(self, model):
-
-        no_decay = ['bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': self.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-            ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
-        return optimizer
-
-    def train(self, model, replay_memory=None, ewc=None) -> (float, Dict):
+    def train(self, model, replay_memory=None, ewc=None) -> Tuple[float, Dict]:
         '''
         Trains model on NLVR2 task
         Args:
@@ -167,9 +163,7 @@ class NLVR2Trainer(TaskTrainer):
         '''
 
         model.to(self.device)
-        if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("nlvr2")
-        elif self.args.cl_algorithm == 'experience_replay':
+        if self.args.cl_algorithm == 'experience_replay':
             assert replay_memory is not None
             do_replay = replay_memory.do_replay()
         elif self.args.cl_algorithm == 'ewc':
@@ -178,7 +172,7 @@ class NLVR2Trainer(TaskTrainer):
 
 
         # Create optimizer
-        optimizer = self.create_optimizer(model)
+        optimizer = model.create_optimizer(self.hparams)
         # Create Scheduler
         scheduler = get_polynomial_decay_schedule_with_warmup(
             optimizer,
@@ -257,8 +251,6 @@ class NLVR2Trainer(TaskTrainer):
         '''
 
         model.to(self.device)
-        if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("nlvr2")
 
         # Load model with encoder weights from encoder_path, and classifier weights from model_path
         model.load_state_dict(torch.load(model_path))
@@ -292,7 +284,7 @@ class LowShotNLVR2Trainer(NLVR2Trainer):
         self.nlvr_train_dataloader.dataset.convert_to_low_shot(num_shots_per_class=low_shot_config['num_shots_per_class'])
         self.max_steps = len(self.nlvr_train_dataloader) * self.num_epochs
 
-    def train(self, model) -> (float, Dict):
+    def train(self, model) -> Tuple[float, Dict]:
         '''
         Trains model on NLVR2 task
         Args:
@@ -306,7 +298,7 @@ class LowShotNLVR2Trainer(NLVR2Trainer):
         model.to(self.device)
 
         # Create optimizer
-        optimizer = self.create_optimizer(model)
+        optimizer = model.create_optimizer(self.hparams)
         # Create Scheduler
         scheduler = get_polynomial_decay_schedule_with_warmup(
             optimizer,

@@ -47,7 +47,15 @@ data
     └── v2_OpenEnded_mscoco_val2014_questions.json
 ```
 
-Items ending with `/` are directories, typically containing a large number of images. The `drawn_images` folder for the VCR task can be generated from the original `vcr1images`, using the scripts available [here](https://github.com/rowanz/merlot/tree/main/downstream/vcr/data).
+Items ending with `/` are directories, typically containing a large number of images. 
+
+For NLVR2:
+- the link for downloading images can be requested using [this form](https://docs.google.com/forms/d/e/1FAIpQLSdB_OhgmpQULV17kjQ4iitftILbOJjuGgJ2ECmg-HdmkjUSAg/viewform). 
+- Download the three zip files (`train_img.zip`, `dev_img.zip`, `test_img.zip`) using `wget` into `nlvr2/images/`.
+- Run `bash src/utils/preproc_nlvr2_images.sh`, with the `IMAGES_DIR` variable set to the full path for `nlvr2/images/`.
+- The files in `nlvr2/data/` can be downloaded from the [NLVR2 GitHub repo](https://github.com/lil-lab/nlvr/tree/master/nlvr2/data).
+
+The `drawn_images` folder for the VCR task can be generated from the original `vcr1images`, using the scripts available [here](https://github.com/rowanz/merlot/tree/main/downstream/vcr/data).
 
 ## Language-Only Tasks
 

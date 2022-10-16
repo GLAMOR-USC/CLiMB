@@ -12,7 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 sys.path.insert(0, '.')
 
@@ -88,6 +88,11 @@ class SNLIVETrainer(TaskTrainer):
         self.loss_criterion = nn.CrossEntropyLoss()
         self.max_steps = len(self.snli_ve_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
+        self.hparams = {
+                        'lr': self.lr,
+                        'weight_decay': self.weight_decay,
+                        'adam_epsilon': self.adam_epsilon,
+        }
 
     def get_train_dataloader(self):
         return self.snli_ve_train_dataloader
@@ -151,17 +156,7 @@ class SNLIVETrainer(TaskTrainer):
 
         return loss, output, ewc_task, ewc_loss
 
-    def create_optimizer(self, model):
-
-        no_decay = ['bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': self.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-            ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
-        return optimizer
-
-    def train(self, model, replay_memory=None, ewc=None) -> (float, Dict):
+    def train(self, model, replay_memory=None, ewc=None) -> Tuple[float, Dict]:
         '''
         Trains model on SNLI-VE task
         Args:
@@ -175,9 +170,7 @@ class SNLIVETrainer(TaskTrainer):
         '''
 
         model.to(self.device)
-        if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("snli-ve")
-        elif self.args.cl_algorithm == 'experience_replay':
+        if self.args.cl_algorithm == 'experience_replay':
             assert replay_memory is not None
             do_replay = replay_memory.do_replay()
         elif self.args.cl_algorithm == 'ewc':
@@ -185,7 +178,7 @@ class SNLIVETrainer(TaskTrainer):
             do_ewc = ewc.do_ewc()
 
         # Create optimizer
-        optimizer = self.create_optimizer(model)
+        optimizer = model.create_optimizer(self.hparams)
         # Create Scheduler
         scheduler = get_polynomial_decay_schedule_with_warmup(
             optimizer,
@@ -216,7 +209,7 @@ class SNLIVETrainer(TaskTrainer):
                         sampled_replay_task = replay_memory.sample_replay_task()
                         replay_loss = replay_memory.run_replay_step(task_key=sampled_replay_task, model=model)
 
-                if (step + 1) % wandb_logger.log_freq == 0:
+                if (step + 1) % wandb_logger.get_log_freq() == 0:
                     log_dict = {'snli-ve': {'loss': loss.item()}}
                     if ewc is not None and do_ewc is True:
                         log_dict[ewc_task] = {'ewc_loss': ewc_loss.item()}
@@ -265,8 +258,6 @@ class SNLIVETrainer(TaskTrainer):
         '''
 
         model.to(self.device)
-        if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("snli-ve")
 
         # Load model with encoder weights from encoder_path, and classifier weights from model_path
         model.load_state_dict(torch.load(model_path))
@@ -302,7 +293,7 @@ class LowShotSNLIVETrainer(SNLIVETrainer):
         self.max_steps = len(self.snli_ve_train_dataloader) * self.num_epochs
 
 
-    def train(self, model) -> (float, Dict):
+    def train(self, model) -> Tuple[float, Dict]:
         '''
         Trains model on SNLI-VE task
         Args:
@@ -316,7 +307,7 @@ class LowShotSNLIVETrainer(SNLIVETrainer):
         model.to(self.device)
 
         # Create optimizer
-        optimizer = self.create_optimizer(model)
+        optimizer = model.create_optimizer(self.hparams)
         # Create Scheduler
         scheduler = get_polynomial_decay_schedule_with_warmup(
             optimizer,

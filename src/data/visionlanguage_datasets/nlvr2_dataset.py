@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import json
 import jsonlines
 import logging
 import glob
@@ -23,6 +24,8 @@ logging.basicConfig(
         format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
         datefmt='%m/%d/%Y %H:%M:%S',
         level=logging.INFO)
+
+
 
 class NLVR2Dataset(Dataset):
 
@@ -53,7 +56,7 @@ class NLVR2Dataset(Dataset):
 
         # Load if cached data exist
         self.cached_data_file = os.path.join(data_dir, 'cached_nlvr2_data', f'{_split}.pkl')
-        if os.path.isfile(self.cached_data_file):
+        if os.path.exists(self.cached_data_file):
             with open(self.cached_data_file, 'rb') as f:
                 self.data = pickle.load(open(self.cached_data_file, 'rb'))
         else:
@@ -74,6 +77,7 @@ class NLVR2Dataset(Dataset):
                     ))
                     example["sentence"] = str(annotation["sentence"])
                     example["labels"] = 0 if str(annotation["label"]) == "False" else 1
+                    self.data.append(example)
 
             with open(self.cached_data_file, 'wb') as f:
                 pickle.dump(self.data, f)

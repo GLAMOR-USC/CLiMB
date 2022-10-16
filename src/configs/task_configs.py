@@ -84,7 +84,7 @@ vcr_config = {
         'num_labels': 4,
         'num_images': 1,
         'model_type': 'multi-choice',
-        'task_type': 'answer',
+        'task_type': 'qa',
         'num_choices': 4,
         'num_epochs': 10,
         'lr': 1e-4,

@@ -151,7 +151,7 @@ def main():
     logger.info("-"*100)
 
     results = []
-    if os.path.isfile(results_file):
+    if os.path.exists(results_file):
         results = json.load(open(results_file))
         logger.info("-"*100)
         logger.info("Cached results:")
@@ -192,7 +192,7 @@ def main():
             task_name = task_configs[task_key]['task_name']
             task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
 
-            assert os.path.isfile(os.path.join(task_output_dir, 'model'))
+            assert os.path.exists(os.path.join(task_output_dir, 'model'))
             logger.info("Found checkpoint for task {}!".format(task_name))
             try:
                 model.load_state_dict(torch.load(os.path.join(task_output_dir, 'model')))

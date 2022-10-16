@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import AdamW
 
 from transformers import BertConfig, BertTokenizer, BertModel
 from transformers import ViltProcessor, ViltModel, ViltConfig
@@ -117,6 +118,18 @@ class ViltBertEncoderWrapper(EncoderWrapper):
                                 attention_mask=encodings['attention_mask'],
                                 token_type_ids=encodings['token_type_ids'])
         return output.last_hidden_state
+
+    def create_optimizer(self, hparams):
+        '''
+        Creates optimizer for new task
+        '''
+        no_decay = ['bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': hparams['weight_decay']},
+            {'params': [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            ]
+        optimizer = AdamW(optimizer_grouped_parameters, lr=hparams['lr'], eps=hparams['adam_epsilon'], betas=(0.9, 0.98))
+        return optimizer
 
 
     def forward(self, **encodings: Dict) -> torch.FloatTensor:
@@ -507,7 +520,7 @@ def create_viltbert_continual_learner_model(model_name_or_path: str,
                                         encoder=encoder, 
                                         encoder_dim=model_config['encoder_dim'], 
                                         task_configs=task_configs)
-    logger.info("Successfully created and initialized ViLT-BERT Continual Leaner model")
+    logger.info("Successfully created and initialized ViLT-BERT Continual Learner model")
 
     return cl_model
 

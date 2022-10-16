@@ -5,12 +5,13 @@ import itertools
 import pdb
 import time
 from PIL import Image
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import AdamW
 
 from transformers import BertConfig, BertTokenizer, BertModel
 from transformers import ViltConfig, ViltProcessor, ViltModel
@@ -201,6 +202,19 @@ class ViltContinualLearner(ContinualLearner):
                         )
             self.task_layer_dict[task_key] = clf_layer
 
+    def create_optimizer(self, hparams):
+        '''
+        Creates optimizer for new task
+        '''
+        no_decay = ['bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': hparams['weight_decay']},
+            {'params': [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            ]
+        optimizer = AdamW(optimizer_grouped_parameters, lr=hparams['lr'], eps=hparams['adam_epsilon'], betas=(0.9, 0.98))
+        return optimizer
+
+
     def forward(self, task_key: str, images: List, texts: List[str]):
         '''
         Does forward pass of image and text inputs through model, 
@@ -224,7 +238,7 @@ class ViltContinualLearner(ContinualLearner):
             else:
                 return self.forward_multi_images(task_key, images, texts, task_config['num_images'])
 
-    def forward_single_image(self, task_key: str, images: List, texts: List[str]) -> (torch.FloatTensor, torch.FloatTensor):
+    def forward_single_image(self, task_key: str, images: List, texts: List[str]) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         '''
         Does forward pass of image and text inputs through model, 
         where every input has one image and one text
@@ -246,7 +260,7 @@ class ViltContinualLearner(ContinualLearner):
         output_logits = self.task_layer[task_key](encoder_output)
         return encoder_output, output_logits
 
-    def forward_multi_images(self, task_key: str, images: List[List], texts: List[str], num_images=2) -> (torch.FloatTensor, torch.FloatTensor):
+    def forward_multi_images(self, task_key: str, images: List[List], texts: List[str], num_images=2) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
 
         '''
         Does forward pass of image and text inputs through model, 
@@ -292,7 +306,7 @@ class ViltContinualLearner(ContinualLearner):
         output_logits = self.task_layer[task_key](pooled_output)
         return pooled_output, output_logits
 
-    def forward_multi_choice(self, task_key: str, images: List, texts: List[List[str]], num_choices) -> (torch.FloatTensor, torch.FloatTensor):
+    def forward_multi_choice(self, task_key: str, images: List, texts: List[List[str]], num_choices) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
 
         '''
         Does forward pass of image and text inputs through model, 
@@ -348,6 +362,9 @@ class ViltContinualLearner(ContinualLearner):
 
     def set_active_adapters(self, task_key: str):
         self.vilt_encoder.vilt.set_active_adapters(task_key)
+
+    def get_active_adapters(self):
+        return self.vilt_encoder.vilt.active_adapters
 
 
 class ViltForImageClassification(nn.Module):
@@ -524,7 +541,7 @@ def create_vilt_continual_learner_model(model_name_or_path: str,
                                     encoder=encoder, 
                                     encoder_dim=model_config['encoder_dim'], 
                                     task_configs=task_configs)
-    logger.info("Successfully created and initialized ViLT Continual Leaner model")
+    logger.info("Successfully created and initialized ViLT Continual Learner model")
 
     return cl_model
 

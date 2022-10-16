@@ -58,7 +58,7 @@ class ExperienceReplayMemory:
         task_config = task_buffer.task_config
         task_trainer = task_buffer.task_trainer
 
-        optimizer = task_trainer.create_optimizer(model)
+        optimizer = model.create_optimizer(task_trainer.hparams)
         replay_batch = task_buffer.sample_replay_batch()
         replay_loss, output, _, _ = task_trainer.train_step(model, replay_batch, optimizer)
 

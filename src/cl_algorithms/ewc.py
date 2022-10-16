@@ -45,7 +45,7 @@ class EWC:
         assert task_key not in self.task_keys
         self.task_keys.append(task_key)
 
-        optimizer = task_trainer.create_optimizer(model)
+        optimizer = model.create_optimizer(task_trainer.hparams)
         batch2inputs_converter = task_trainer.batch2inputs_converter
         dataloader = task_trainer.get_train_dataloader()
         loss_criterion = task_trainer.loss_criterion
@@ -60,13 +60,14 @@ class EWC:
             loss, output, _, _ = task_trainer.train_step(model, batch)
 
             for name, param in model.get_encoder().named_parameters():
-                self.fisher_dict[task_key][name] += param.grad.data.pow(2).cpu().clone()
+                if param.grad is not None:
+                    self.fisher_dict[task_key][name] += param.grad.data.pow(2).cpu().clone()
 
             num_samples_completed += len(batch['raw_texts'])
             if num_samples_completed >= fisher_sample_size:
                 break
 
-        for name, param in model.get_encoder().named_parameters():
+        for name in self.fisher_dict[task_key].keys():
             self.fisher_dict[task_key][name] /=  num_samples_completed
 
         logger.info("Saved encoder parameters for {} task!".format(task_config['task_name']))
@@ -79,9 +80,10 @@ class EWC:
         ewc_task_key = random.choice(self.task_keys)
         ewc_loss = 0
         for name, param in model.get_encoder().named_parameters():
-            ewc_param = self.param_dict[ewc_task_key][name].to(self.device)
-            fisher_info = self.fisher_dict[ewc_task_key][name].to(self.device)
-            ewc_loss += (fisher_info*((param - ewc_param).pow(2))).sum()
+            if name in self.fisher_dict[ewc_task_key].keys():
+                ewc_param = self.param_dict[ewc_task_key][name].to(self.device)
+                fisher_info = self.fisher_dict[ewc_task_key][name].to(self.device)
+                ewc_loss += (fisher_info*((param - ewc_param).pow(2))).sum()
         return ewc_task_key, self.ewc_loss_weight*ewc_loss
 
     def do_ewc(self):

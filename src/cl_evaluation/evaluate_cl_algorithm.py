@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 from transformers import BertTokenizer
 
+from cl_algorithms import AdapterHandler
 from configs.model_configs import model_configs
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
 from utils.seed_utils import set_seed
@@ -71,7 +72,7 @@ def upstream_knowledge_transfer_eval(args: argparse.Namespace, results_file: str
     return upstream_knowledge_transfer_dict
 
 
-def catastrophic_forgetting_eval(args: argparse.Namespace, results_file: str, model, task_trainers: List) -> Dict:
+def catastrophic_forgetting_eval(args: argparse.Namespace, results_file: str, model, task_trainers: List, adapter_handler: AdapterHandler) -> Dict:
     '''
     For model checkpoint after each CL task, compute forgetting of previous CL tasks
 
@@ -114,6 +115,8 @@ def catastrophic_forgetting_eval(args: argparse.Namespace, results_file: str, mo
 
             # Get evaluation score on prev_task
             prev_task_trainer = task_trainers[prev_task_key]
+            if adapter_handler is not None:
+                adapter_handler.activate_adapter_for_eval(prev_task_key, model)
             eval_score = prev_task_trainer.eval_forgetting(model, model_path)
             logger.info("Evaluation score of {} model on {}, using checkpoint after {} training: {:.2f}".format(args.encoder_name,
                                                                                                   prev_task_name,

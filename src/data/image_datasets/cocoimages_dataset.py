@@ -39,6 +39,7 @@ class MSCOCOImagesDataset(Dataset):
         image_filenames = os.listdir(self.images_dir)
         self.imageid2filename = {}
         for fn in image_filenames:
+            fn = fn.split('_')[-1]
             image_id = int(fn.strip('.jpg'))
             self.imageid2filename[image_id] = os.path.join(self.images_dir, fn)
         self.imageids = list(set(list(self.imageid2filename.keys())))
@@ -60,8 +61,10 @@ class MSCOCOImagesDataset(Dataset):
 
         if self.visual_input_type == 'pil-image':
             return self.get_pil_image(image_id)
+
         if self.visual_input_type == 'raw':
             return self.get_raw_image_tensor(image_id)
+
         elif self.visual_input_type == 'fast-rcnn':
             raise NotImplementedError("Have not implemented Fast-RCNN feature inputs for MS-COCO images!")
 

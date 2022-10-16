@@ -23,12 +23,12 @@ from transformers.adapters import AdapterConfig
 
 from modeling import load_encoder_map, create_continual_learner_map
 
-from cl_algorithms import ExperienceReplayMemory, EWC
+from cl_algorithms import ExperienceReplayMemory, EWC, AdapterHandler
+from cl_algorithms.adapters import ADAPTER_MAP, SUPPORTED_ADAPTER_METHODS
 from cl_evaluation.evaluate_cl_algorithm import upstream_knowledge_transfer_eval, catastrophic_forgetting_eval
 
 from configs.model_configs import model_configs, ALLOWED_CL_ENCODERS
 from configs.task_configs import task_configs, SUPPORTED_VL_TASKS
-from configs.adapter_configs import ADAPTER_MAP
 from configs.wandb_config import wandb_config
 
 from utils.seed_utils import set_seed
@@ -74,6 +74,8 @@ def main():
                         help="Number of training steps after which to do a memory replay step.")
 
     # Arguments specific to Adapters algorithm
+    parser.add_argument("--adapter_method", choices=SUPPORTED_ADAPTER_METHODS,
+                        help="Name of Adapter algorithm")
     parser.add_argument("--adapter_config", choices=list(ADAPTER_MAP.keys()),
                         help="Type of Adapter architecture")
     parser.add_argument("--adapter_reduction_factor", type=int, default=0,
@@ -107,7 +109,7 @@ def main():
     # --------------------- Set up experiment directories ---------------------
     experiment_name = '{}-{}'.format(args.encoder_name, args.cl_algorithm)
     if args.cl_algorithm == 'adapter':
-        experiment_name = '{}_{}'.format(experiment_name, args.adapter_config)
+        experiment_name = '{}_{}_{}config'.format(experiment_name, args.adapter_method, args.adapter_config)
     elif args.cl_algorithm == 'freeze_bottom_k_layers':
         experiment_name = experiment_name.replace('_k_layers', '{}layers'.format(args.layers_to_freeze))
     for i, task_key in enumerate(args.ordered_cl_tasks):
@@ -156,21 +158,15 @@ def main():
 
     replay_memory = None
     ewc = None
+    adapter_handler = None
     if args.cl_algorithm == 'experience_replay':
         # Initialize an empty replay memory
         replay_memory = ExperienceReplayMemory()
 
     elif args.cl_algorithm == 'adapter':
-        # Create and add Adapters for each task
-        adapter_config = AdapterConfig.load(args.adapter_config)
-        config_dict = adapter_config.to_dict()
-        if args.adapter_reduction_factor > 0:
-            config_dict['reduction_factor'] = args.adapter_reduction_factor
-        adapter_config = AdapterConfig.from_dict(config_dict)
-        logger.info("Adding Adapter layers with configuration:")
-        logger.info(str(adapter_config))
-        for task_key in args.ordered_cl_tasks:
-            model.add_adapter(task_key, config=adapter_config)
+        # Create AdapterHandler, and add Adapters for each task
+        adapter_handler = AdapterHandler(adapter_method=args.adapter_method, args=args)
+        adapter_handler.add_adapters_to_model(model)
 
     elif args. cl_algorithm == 'ewc':
         ewc = EWC(args)
@@ -204,7 +200,7 @@ def main():
 
         # If continuing an already-started experiment, and old upstream results were detected, then load the old results from json
         results = []
-        if os.path.isfile(results_file):
+        if os.path.exists(results_file):
             results = json.load(open(results_file))
             logger.info("-"*100)
             logger.info("Cached results:")
@@ -223,7 +219,7 @@ def main():
             task_name = task_configs[task_key]['task_name']
             task_output_dir = os.path.join(output_dir, 'checkpoints', 'task{}_{}'.format(task_num, task_key))
 
-            if os.path.isfile(os.path.join(task_output_dir, 'model')):
+            if os.path.exists(os.path.join(task_output_dir, 'model')):
 
                 # If we find model checkpoint for this task, load the checkpoint and move onto next CL task
                 logger.info("Found checkpoint for task {}!".format(task_name))
@@ -248,8 +244,7 @@ def main():
                 #If CL algorithm is adapters, activate adapter for this task
                 if args.cl_algorithm == 'adapter':
                     logger.info("Activating adapter networks only for task {}".format(task_name))
-                    model.train_adapter(task_key)
-                    model.set_active_adapters(task_key)
+                    adapter_handler.activate_adapter_for_training(task_key=task_key, model=model)
                     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad == True)
                     logger.info('Trainable Parameters: {:.2f}M ({:.2f}%)'.format(trainable_params*10**-6, (trainable_params/total_params*100)))
 
@@ -324,7 +319,7 @@ def main():
 
         # Run the forgetting evaluation, and save results to file
         logger.info("Evaluating CATASTROPHIC FORGETTING of {} model on {}".format(args.encoder_name, ' -> '.join(args.ordered_cl_tasks)))
-        catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, task_trainers)
+        catastrophic_forgetting_dict = catastrophic_forgetting_eval(args, results_file, model, task_trainers, adapter_handler)
 
         eval_results_file = os.path.join(output_dir, 'eval_results.json')
         eval_results = {'upstream_knowledge_transfer': upstream_knowledge_dict,

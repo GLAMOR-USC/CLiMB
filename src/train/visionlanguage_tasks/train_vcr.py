@@ -12,7 +12,7 @@ import pickle as pkl
 import copy
 import pdb
 from tqdm import tqdm
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 sys.path.insert(0, '.')
 
@@ -83,6 +83,11 @@ class VCRTrainer(TaskTrainer):
         self.loss_criterion = nn.CrossEntropyLoss()
         self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
         self.warmup_ratio = 0.1 # TODO remove hard code
+        self.hparams = {
+                        'lr': self.lr,
+                        'weight_decay': self.weight_decay,
+                        'adam_epsilon': self.adam_epsilon,
+        }
 
     def get_train_dataloader(self):
         return self.vcr_train_dataloader
@@ -90,7 +95,7 @@ class VCRTrainer(TaskTrainer):
     def get_collate_fn(self):
         return self.vcr_train_dataloader.collate_fn
 
-    def forward_pass(self, model, batch: Dict, do_eval: bool = False) -> tuple:
+    def forward_pass(self, model, batch: Dict, do_eval: bool = False) -> Tuple:
         '''
         Forward pass of batch inputs through model
         output: tuple containing (encoder_pooled_output, output_logits)
@@ -146,17 +151,7 @@ class VCRTrainer(TaskTrainer):
 
         return loss, output, ewc_task, ewc_loss
 
-    def create_optimizer(self, model):
-
-        no_decay = ['bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': self.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-            ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.lr, eps=self.adam_epsilon, betas=(0.9, 0.98))
-        return optimizer
-
-    def train(self, model, replay_memory=None, ewc=None) -> (float, Dict):
+    def train(self, model, replay_memory=None, ewc=None) -> Tuple[float, Dict]:
         '''
         Trains model on VCR task
         Args:
@@ -170,9 +165,7 @@ class VCRTrainer(TaskTrainer):
         '''
 
         model.to(self.device)
-        if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("vcr")
-        elif self.args.cl_algorithm == 'experience_replay':
+        if self.args.cl_algorithm == 'experience_replay':
             assert replay_memory is not None
             do_replay = replay_memory.do_replay()
         elif self.args.cl_algorithm == 'ewc':
@@ -180,7 +173,7 @@ class VCRTrainer(TaskTrainer):
             do_ewc = ewc.do_ewc()
 
         # Create optimizer
-        optimizer = self.create_optimizer(model)
+        optimizer = model.create_optimizer(self.hparams)
         # Create Scheduler
         scheduler = get_polynomial_decay_schedule_with_warmup(
             optimizer,
@@ -260,8 +253,6 @@ class VCRTrainer(TaskTrainer):
         '''
 
         model.to(self.device)
-        if self.args.cl_algorithm == 'adapter':
-            model.set_active_adapters("vcr")
 
         # Load model with encoder weights from encoder_path, and classifier weights from model_path
         model.load_state_dict(torch.load(model_path))
@@ -288,14 +279,14 @@ class LowShotVCRTrainer(VCRTrainer):
         low_shot_config: dictionary containing low-shot configuration parameters
         '''
 
-        super(LowShotVCRTrainer, self).__init__(args, task_configs, model_config, tokenizer, device)
+        super(LowShotVCRTrainer, self).__init__(args, task_configs, model_config, device)
         self.low_shot_config = low_shot_config
         self.eval_epochs = [x-1 for x in low_shot_config['eval_epochs']]
 
         self.vcr_train_dataloader.dataset.convert_to_low_shot(low_shot_percentage=low_shot_config['percentage'])
         self.max_steps = len(self.vcr_train_dataloader) * self.num_epochs
 
-    def train(self, model) -> (float, Dict):
+    def train(self, model) -> Tuple[float, Dict]:
         '''
         Trains model on VCR task
         Args:
@@ -309,7 +300,7 @@ class LowShotVCRTrainer(VCRTrainer):
         model.to(self.device)
 
         # Create optimizer
-        optimizer = self.create_optimizer(model)
+        optimizer = model.create_optimizer(self.hparams)
         # Create Scheduler
         scheduler = get_polynomial_decay_schedule_with_warmup(
             optimizer,

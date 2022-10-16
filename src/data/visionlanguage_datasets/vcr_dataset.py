@@ -66,7 +66,7 @@ class VCRDataset(Dataset):
     def __init__(self, 
                  data_dir: str, 
                  split: str, 
-                 task_type='answer',
+                 task_type='qa',
                  **kwargs):
 
         """
@@ -77,7 +77,7 @@ class VCRDataset(Dataset):
         Args:
         data_dir : path containing VCR questions and annotations
         split: either train/val/test split
-        task_type: either 'answer' or 'rationale', depending on if we do Q->A or QA->R
+        task_type: either 'qa' or 'qar', depending on if we do Q->A or QA->R
 
         Returns:
         Loads all annotations into self.data, where each item is a single VCR input
@@ -90,12 +90,11 @@ class VCRDataset(Dataset):
         self.split = split
         self.task_type = task_type
         self.tokenizer = kwargs['tokenizer'] if 'tokenizer' in kwargs else None
-        print(self.tokenizer)
 
         self.annotations_file = os.path.join(data_dir, 'annotation/{}.jsonl'.format(split))
 
         self.cached_data_file = os.path.join(data_dir, 'cached_vcr_data', 'vcr_'+ str(task_type) + '_' + '{}.pkl'.format(split))
-        if os.path.isfile(self.cached_data_file):
+        if os.path.exists(self.cached_data_file):
             self.data = pkl.load(open(self.cached_data_file, 'rb'))
         else:
             self.data = []
@@ -108,7 +107,7 @@ class VCRDataset(Dataset):
                 objects = line['objects']   ### objects
                 
                 question = process_list(line['question'], objects)  ### question
-                if(task_type == 'answer'):
+                if(task_type == 'qa'):
                     ### answers:     question + ' [SEP] ' + answer
                     for answer in line['answer_choices']:                        
                         answer1 = process_list(answer, objects)
@@ -223,7 +222,7 @@ def build_vcr_dataloader(args,
     Args:
     data_dir : path containing VCR questions and annotations.
     split: either train/val split
-    task_type: either 'answer' or 'rationale', depending on if we do Q->A or QA->R
+    task_type: either 'qa' or 'qar', depending on if we do Q->A or QA->R
     visual_input_type: format of visual input to model
 
     Returns:
@@ -252,7 +251,7 @@ if __name__ == '__main__':
 
     class Args:
         def __init__(self):
-            self.batch_size = 4
+            self.batch_size = 16
             self.num_workers = 2
             self.visual_input_type = 'pil-image'
     
@@ -266,13 +265,13 @@ if __name__ == '__main__':
 
     from transformers import BertTokenizer
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    #vcr.VCRDataset(data_dir, split, tokenizer, task_type='answer')
+    #vcr.VCRDataset(data_dir, split, tokenizer, task_type='qa')
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'answer', visual_input_type=args.visual_input_type)
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'answer', visual_input_type=args.visual_input_type)
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', tokenizer = tokenizer, task_type = 'qa', visual_input_type=args.visual_input_type)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val',  tokenizer = tokenizer, task_type = 'qa', visual_input_type=args.visual_input_type)
 
-    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', task_type = 'rationale', visual_input_type=args.visual_input_type)
-    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val', task_type = 'rationale', visual_input_type=args.visual_input_type)
+    vcr_train_dataloader  = build_vcr_dataloader(args, data_dir, split= 'train', task_type = 'qar', visual_input_type=args.visual_input_type)
+    vcr_val_dataloader  = build_vcr_dataloader(args, data_dir, split= 'val', task_type = 'qar', visual_input_type=args.visual_input_type)
 
-    for batch in vcr_train_dataloader:
+    for batch in vcr_val_dataloader:
         pdb.set_trace()
